@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tracert",
+  "productName": "TraceRT",
   "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "identifier": "com.tracert.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5175",
