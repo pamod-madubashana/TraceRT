@@ -56,7 +56,7 @@ fn run_traceroute(target: String) -> Result<String, String> {
 
     // Check exit status and return appropriate result
     if output.status.success() {
-        String::from_utf8_lossy(&output.stdout).into_owned()
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
         Err(format!("Traceroute failed: {}", stderr))
