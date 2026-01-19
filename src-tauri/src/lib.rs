@@ -1,6 +1,8 @@
+use std::process::Command;
 use regex::Regex;
-use tauri_plugin_shell::{self, ShellExt};
-use tauri::{Runtime, Manager};
+use std::time::Duration;
+use std::process::Stdio;
+use std::io::Read;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -22,57 +24,42 @@ pub fn run() {
 }
 
 #[tauri::command]
-fn run_traceroute(target: String) -> Result<String, String> {
+async fn run_traceroute(target: String) -> Result<String, String> {
     // Validate target input
     if !is_valid_target(&target) {
         return Err("Invalid target: must contain only letters, digits, dots, dashes, colons, and underscores. Max 255 characters.".to_string());
     }
 
-    // Execute OS-specific traceroute command with timeout
+    // Execute OS-specific traceroute command
     use std::process::Command;
-    use std::thread;
-    use std::sync::mpsc;
-    use std::time::Duration;
     
-    let target_clone = target.clone();
-    let (tx, rx) = mpsc::channel();
-    
-    let handle = thread::spawn(move || {
-        let result = match std::env::consts::OS {
-            "windows" => {
-                // Windows: tracert -d <target>
-                Command::new("tracert")
-                    .args(["-d", &target_clone])
-                    .output()
-            }
-            _ => {
-                // Unix-like systems: try traceroute first, fallback to tracepath
-                let cmd_result = Command::new("traceroute")
-                    .arg(&target_clone)
-                    .output();
-                
-                match cmd_result {
-                    Ok(output) => Ok(output),
-                    Err(_) => {
-                        // Fallback to tracepath
-                        Command::new("tracepath")
-                            .arg(&target_clone)
-                            .output()
-                    }
+    let output = match std::env::consts::OS {
+        "windows" => {
+            // Windows: tracert -d <target>
+            // Set a timeout using the command itself
+            Command::new("tracert")
+                .args(["-d", &target])
+                .output()
+                .map_err(|e| format!("Failed to execute tracert: {}", e))?
+        }
+        _ => {
+            // Unix-like systems: try traceroute first, fallback to tracepath
+            let cmd_result = Command::new("traceroute")
+                .arg(&target)
+                .output();
+            
+            match cmd_result {
+                Ok(output) => output,
+                Err(_) => {
+                    // Fallback to tracepath
+                    Command::new("tracepath")
+                        .arg(&target)
+                        .output()
+                        .map_err(|e| format!("Failed to execute traceroute or tracepath: {}", e))?
                 }
             }
-        };
-        tx.send(result).unwrap_or(());
-    });
-    
-    // Wait for command to finish with timeout
-    let output = match rx.recv_timeout(Duration::from_secs(30)) {
-        Ok(result) => result.map_err(|e| format!("Failed to execute traceroute: {}", e))?,
-        Err(_) => return Err("Traceroute command timed out after 30 seconds".to_string()),
+        }
     };
-    
-    // Wait for thread to complete
-    let _ = handle.join();
 
     // Check exit status and return appropriate result
     if output.status.success() {
