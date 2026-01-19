@@ -30,33 +30,41 @@ async fn run_traceroute(target: String) -> Result<String, String> {
         return Err("Invalid target: must contain only letters, digits, dots, dashes, colons, and underscores. Max 255 characters.".to_string());
     }
 
-    // Execute OS-specific traceroute command
-    use std::process::Command;
+    // Execute OS-specific traceroute command using Tokio
+    use tokio::process::Command;
+    use tokio::time::{timeout, Duration};
     
     let output = match std::env::consts::OS {
         "windows" => {
             // Windows: tracert -d <target>
-            // Set a timeout using the command itself
-            Command::new("tracert")
-                .args(["-d", &target])
-                .output()
-                .map_err(|e| format!("Failed to execute tracert: {}", e))?
+            match timeout(
+                Duration::from_secs(30),
+                Command::new("tracert").args(["-d", &target]).output()
+            ).await {
+                Ok(Ok(output)) => output,
+                Ok(Err(e)) => return Err(format!("Failed to execute tracert: {}", e)),
+                Err(_) => return Err("Traceroute command timed out after 30 seconds".to_string()),
+            }
         }
         _ => {
             // Unix-like systems: try traceroute first, fallback to tracepath
-            let cmd_result = Command::new("traceroute")
-                .arg(&target)
-                .output();
-            
-            match cmd_result {
-                Ok(output) => output,
-                Err(_) => {
+            match timeout(
+                Duration::from_secs(30),
+                Command::new("traceroute").arg(&target).output()
+            ).await {
+                Ok(Ok(output)) => output,
+                Ok(Err(_)) => {
                     // Fallback to tracepath
-                    Command::new("tracepath")
-                        .arg(&target)
-                        .output()
-                        .map_err(|e| format!("Failed to execute traceroute or tracepath: {}", e))?
+                    match timeout(
+                        Duration::from_secs(30),
+                        Command::new("tracepath").arg(&target).output()
+                    ).await {
+                        Ok(Ok(output)) => output,
+                        Ok(Err(e)) => return Err(format!("Failed to execute traceroute or tracepath: {}", e)),
+                        Err(_) => return Err("Traceroute command timed out after 30 seconds".to_string()),
+                    }
                 }
+                Err(_) => return Err("Traceroute command timed out after 30 seconds".to_string()),
             }
         }
     };
