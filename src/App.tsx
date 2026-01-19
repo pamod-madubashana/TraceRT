@@ -1,6 +1,34 @@
 import { useState, useEffect, useRef } from 'react';
-// @ts-ignore - Tauri v2 import workaround
-const invoke = window.__TAURI__.invoke;
+
+// Type-safe Tauri invoke wrapper
+interface InvokeFunction {
+  (cmd: string, args?: Record<string, unknown>): Promise<unknown>;
+}
+
+// Proper Tauri import with fallback for development
+let invoke: InvokeFunction;
+
+try {
+  // @ts-ignore - Dynamic import for Tauri
+  const tauriApi = await import('@tauri-apps/api');
+  invoke = tauriApi.invoke;
+} catch (e) {
+  // Fallback for browser development - mock implementation
+  console.warn('Tauri not available, using mock implementation');
+  invoke = async (cmd: string, args?: Record<string, unknown>) => {
+    // Mock traceroute response for development
+    if (cmd === 'run_traceroute') {
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate delay
+      return `Tracing route to ${args?.target} [${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}]
+1     1 ms    <1 ms    <1 ms  192.168.1.1
+2     2 ms     1 ms     1 ms  10.0.0.1
+3     3 ms     2 ms     2 ms  ${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}
+4     4 ms     3 ms     3 ms  ${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}
+5     5 ms     4 ms     4 ms  ${(args?.target as string) || 'target.com'}`;
+    }
+    throw new Error(`Unknown command: ${cmd}`);
+  };
+}
 
 interface Hop {
   number: number;
@@ -66,7 +94,7 @@ function App() {
         await new Promise(resolve => setTimeout(resolve, 50 + Math.random() * 100));
       }
 
-      const result = await invoke<string>('run_traceroute', { target });
+      const result = await invoke('run_traceroute', { target }) as string;
       setRawOutput(result);
       parseHopsWithAnimation(result);
     } catch (err) {
@@ -333,7 +361,7 @@ function App() {
                         </tr>
                       </thead>
                       <tbody>
-                        {parsedHops.map((hop, index) => (
+                        {parsedHops.map((hop) => (
                           <tr 
                             key={hop.number} 
                             className="border-b border-gray-700/50 hover:bg-cyan-500/10 transition-colors duration-200"
