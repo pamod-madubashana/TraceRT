@@ -23,27 +23,6 @@
       "csp": null
     }
   },
-  "plugins": {
-    "process-command-api": {
-      "scope": [
-        {
-          "name": "tracert",
-          "cmd": "tracert",
-          "args": true
-        },
-        {
-          "name": "traceroute",
-          "cmd": "traceroute",
-          "args": true
-        },
-        {
-          "name": "tracepath",
-          "cmd": "tracepath",
-          "args": true
-        }
-      ]
-    }
-  },
   "bundle": {
     "active": true,
     "targets": "all",
