@@ -59,7 +59,10 @@ const TerminalOutput = ({ output, target }: TerminalOutputProps) => {
       <div className="relative bg-background/50 border border-border/50 rounded p-4 min-h-[200px] max-h-[300px] overflow-auto">
         {/* Scan line effect */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden rounded">
-          <div className="absolute left-0 right-0 h-8 bg-gradient-to-b from-primary/5 to-transparent animate-scan" />
+          <div 
+            className="absolute left-0 right-0 h-8 bg-gradient-to-b from-primary/5 to-transparent animate-scan"
+            style={{ animationDelay: `${Math.random() * 5}s` }}
+          />
         </div>
         
         {output ? (

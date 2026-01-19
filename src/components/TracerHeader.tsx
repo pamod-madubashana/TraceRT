@@ -2,7 +2,14 @@ import { Activity } from "lucide-react";
 
 const TracerHeader = () => {
   return (
-    <header className="relative py-8 text-center">
+    <header className="relative py-8 text-center overflow-hidden">
+      {/* Scan line effect */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div 
+          className="absolute left-0 right-0 h-8 bg-gradient-to-b from-primary/5 to-transparent animate-scan"
+          style={{ animationDelay: `${Math.random() * 5}s` }}
+        />
+      </div>
       {/* Decorative lines */}
       <div className="absolute left-0 right-0 top-1/2 h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
       
