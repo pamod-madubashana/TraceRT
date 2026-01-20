@@ -15,7 +15,13 @@ const InputPanel = ({ onTrace, isTracing, compact = false }: InputPanelProps) =>
     e.stopPropagation();
     if (target.trim()) onTrace(target.trim());
   };
-
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!isTracing && target.trim()) onTrace(target.trim());
+    }
+  };
   if (compact) {
     return (
       <div className="flex gap-3">
@@ -27,6 +33,7 @@ const InputPanel = ({ onTrace, isTracing, compact = false }: InputPanelProps) =>
             type="text"
             value={target}
             onChange={(e) => setTarget(e.target.value)}
+            onKeyDown={handleKeyDown}
             placeholder="IP or hostname..."
             className="cyber-input w-full pl-7 py-1.5 text-sm rounded font-mono"
             disabled={isTracing}
@@ -72,6 +79,7 @@ const InputPanel = ({ onTrace, isTracing, compact = false }: InputPanelProps) =>
             type="text"
             value={target}
             onChange={(e) => setTarget(e.target.value)}
+            onKeyDown={handleKeyDown}
             placeholder="Enter IP address or hostname..."
             className="cyber-input w-full pl-10 rounded font-mono"
             disabled={isTracing}
