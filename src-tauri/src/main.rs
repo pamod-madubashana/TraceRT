@@ -788,9 +788,6 @@ fn main() {
                 tauri::RunEvent::WindowEvent { label, event, .. } => {
                     tracing::debug!("[LIFECYCLE] Window event - {}: {:?}", label, event);
                 }
-                _ => {
-                    tracing::debug!("[LIFECYCLE] App event: {:?}", event);
-                }
             }
         });
         
