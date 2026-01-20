@@ -170,7 +170,7 @@ export const useTraceSimulation = () => {
       // Use Tauri invoke
       const isTauri =
         typeof window !== "undefined" &&
-        typeof (window as any).__TAURI_INTERNALS__ !== "undefined";
+        typeof (window as any).__TAURI__ !== "undefined";
       
       if (isTauri) {
         rawOutput = await (window as any).__TAURI__.invoke("run_traceroute", { target });
