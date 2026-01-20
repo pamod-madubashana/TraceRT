@@ -167,15 +167,19 @@ async fn run_trace(
     options: TraceOptions,
     state: tauri::State<'_, AppState>,
 ) -> Result<TraceResult, String> {
-    info!("Starting trace to target: {}", target);
+    let pid = std::process::id();
+    tracing::info!("[TRACE] run_trace start target='{}' pid={}", target, pid);
 
     // Validate target to prevent command injection
     if !is_valid_target(&target) {
-        return Err("Invalid target format".to_string());
+        let error_msg = "Invalid target format".to_string();
+        tracing::warn!("[TRACE] {} for target: {}", error_msg, target);
+        return Err(error_msg);
     }
 
     // Prepare command based on OS
     let (cmd, args) = prepare_trace_command(&target, &options)?;
+    tracing::debug!("[TRACE] Prepared command: '{}' with args: {:?}", cmd, args);
 
     // Create a unique ID for this trace
     let trace_id = uuid::Uuid::new_v4().to_string();
@@ -183,6 +187,7 @@ async fn run_trace(
     let cancel_notify = Arc::new(Notify::new());
     let cancel_for_task = cancel_notify.clone();
     let cancel_for_exec = cancel_notify.clone();
+    
     // Execute the traceroute command in a cancellable task
     let trace_future = execute_trace_with_cancel(cmd, args, cancel_for_exec);
     let handle = tokio::spawn(async move {
@@ -199,76 +204,165 @@ async fn run_trace(
             trace_id.clone(), 
             RunningTrace { cancel_notify, handle }
         );
+        tracing::debug!("[TRACE] Stored running trace with ID: {}", trace_id);
     }
     
     // Wait for completion
     let running_trace = {
-    let mut running_traces = state.running_traces.lock().await;
-    running_traces
-        .remove(&trace_id)
-        .ok_or_else(|| "Trace not found in running traces".to_string())?
+        let mut running_traces = state.running_traces.lock().await;
+        match running_traces.remove(&trace_id) {
+            Some(trace) => trace,
+            None => {
+                let error_msg = "Trace not found in running traces".to_string();
+                tracing::error!("[TRACE] {}", error_msg);
+                return Err(error_msg);
+            }
+        }
     };
 
     let result = match running_trace.handle.await {
-        Ok(res) => res?, // res is Result<TraceResult, String>
-        Err(_) => return Err("Trace task join failed (cancelled/panicked)".to_string()),
+        Ok(res) => {
+            match res {
+                Ok(trace_result) => {
+                    tracing::info!("[TRACE] Trace completed successfully for target: {}", target);
+                    trace_result
+                },
+                Err(e) => {
+                    tracing::warn!("[TRACE] Trace failed for target '{}': {}", target, e);
+                    return Err(e);
+                }
+            }
+        },
+        Err(e) => {
+            let error_msg = format!("Trace task join failed (cancelled/panicked): {}", e);
+            tracing::error!("[TRACE] {}", error_msg);
+            return Err(error_msg);
+        }
     };
     
     Ok(result)
 }
 
 async fn execute_trace_with_cancel(cmd: String, args: Vec<String>, cancel_notify: Arc<Notify>) -> Result<TraceResult, String> {
+    let pid = std::process::id();
+    tracing::info!("[TRACE] execute_trace_with_cancel start cmd='{}' args='{:?}' pid={}", cmd, args, pid);
+    
     // Create the command
     let mut child = Command::new(&cmd)
         .args(&args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("Failed to start {}: {}", cmd, e))?;
+        .map_err(|e| {
+            let error_msg = format!("Failed to start {}: {}", cmd, e);
+            tracing::error!("[TRACE] Failed to spawn command: {}", error_msg);
+            error_msg
+        })?;
+    
+    let child_pid = child.id().unwrap_or(0);
+    tracing::info!("[TRACE] Child process spawned successfully pid={} cmd='{}'", child_pid, cmd);
 
-    // Create a future that monitors both the process and the cancellation
+    // Create readers for both stdout and stderr
     let stdout = child.stdout.take().ok_or_else(|| "Failed to get stdout".to_string())?;
     let stderr = child.stderr.take().ok_or_else(|| "Failed to get stderr".to_string())?;
 
     let mut out_reader = BufReader::new(stdout).lines();
     let mut err_reader = BufReader::new(stderr).lines();
     
-    let raw_output = String::new();
+    let mut raw_output = String::new();
+    let mut hops = Vec::new();
+    let start_time = chrono::Utc::now().to_rfc3339();
+    
+    // Counters for diagnostic purposes
+    let mut stdout_lines_read = 0;
+    let mut stderr_lines_read = 0;
+    let mut max_diag_lines = 10; // Only log first N lines to avoid spam
     
     loop {
         tokio::select! {
-        line = out_reader.next_line() => {
-        match line {
-            Ok(Some(line)) => { /* push + parse */ }
-            Ok(None) => { /* stdout closed */ }
-            Err(e) => return Err(format!("stdout read error: {e}")),
-        }
-        }
-        line = err_reader.next_line() => {
-        match line {
-            Ok(Some(line)) => { /* push + parse */ }
-            Ok(None) => { /* stderr closed */ }
-            Err(e) => return Err(format!("stderr read error: {e}")),
-        }
-        }
-        _ = cancel_notify.notified() => {
-            let _ = child.kill().await;
-            tracing::debug!("raw_output bytes: {}", raw_output.len());
-            tracing::debug!("raw_output preview: {}", raw_output.lines().take(5).collect::<Vec<_>>().join(" | "));
-            return Err("Trace cancelled by user".to_string());
+            line = out_reader.next_line() => {
+                match line {
+                    Ok(Some(line)) => {
+                        stdout_lines_read += 1;
+                        if stdout_lines_read <= max_diag_lines {
+                            tracing::debug!("[TRACE] stdout line {}: {}", stdout_lines_read, line);
+                        }
+                        raw_output.push_str(&line);
+                        raw_output.push('\n');
+                        
+                        // Try to parse the line for hop data
+                        if let Some(hop_data) = parse_traceroute_line(&line) {
+                            hops.push(hop_data);
+                        }
+                    }
+                    Ok(None) => {
+                        tracing::info!("[TRACE] stdout closed after reading {} lines", stdout_lines_read);
+                        break; // stdout closed, process likely finished
+                    }
+                    Err(e) => {
+                        let error_msg = format!("stdout read error: {}", e);
+                        tracing::error!("[TRACE] {}", error_msg);
+                        return Err(error_msg);
+                    }
+                }
             }
+            line = err_reader.next_line() => {
+                match line {
+                    Ok(Some(line)) => {
+                        stderr_lines_read += 1;
+                        if stderr_lines_read <= max_diag_lines {
+                            tracing::debug!("[TRACE] stderr line {}: {}", stderr_lines_read, line);
+                        }
+                        raw_output.push_str(&line);
+                        raw_output.push('\n');
+                        
+                        // On Windows, tracert writes to stderr, so we should also try to parse stderr lines
+                        if let Some(hop_data) = parse_traceroute_line(&line) {
+                            hops.push(hop_data);
+                        }
+                    }
+                    Ok(None) => {
+                        tracing::info!("[TRACE] stderr closed after reading {} lines", stderr_lines_read);
+                        // Don't break here, stdout might still have data
+                    }
+                    Err(e) => {
+                        let error_msg = format!("stderr read error: {}", e);
+                        tracing::error!("[TRACE] {}", error_msg);
+                        return Err(error_msg);
+                    }
+                }
+            }
+            _ = cancel_notify.notified() => {
+                tracing::info!("[TRACE] Cancel notification received, killing process pid={}", child_pid);
+                let _ = child.kill().await;
+                tracing::debug!("raw_output bytes: {}", raw_output.len());
+                tracing::debug!("raw_output preview: {}", raw_output.lines().take(5).collect::<Vec<_>>().join(" | "));
+                return Err("Trace cancelled by user".to_string());
+            }
+        }
     }
-    }
+    
+    tracing::info!("[TRACE] About to wait for child process pid={}", child_pid);
     
     // Wait for the process to finish
     let exit_status = child.wait().await
-        .map_err(|e| format!("Failed to wait for process: {}", e))?;
+        .map_err(|e| {
+            let error_msg = format!("Failed to wait for process: {}", e);
+            tracing::error!("[TRACE] {}", error_msg);
+            error_msg
+        })?;
+    
+    tracing::info!("[TRACE] Child process finished with exit code: {}", exit_status.code().unwrap_or(-1));
     
     if !exit_status.success() {
-        return Err(format!("{} failed with status code {}: process exited", cmd, exit_status.code().unwrap_or(-1)));
+        let error_msg = format!("{} failed with status code {}: process exited", cmd, exit_status.code().unwrap_or(-1));
+        tracing::warn!("[TRACE] {}", error_msg);
+        // Return as warning rather than error to allow partial results
     }
     
     let end_time = Some(chrono::Utc::now().to_rfc3339());
+    
+    tracing::info!("[TRACE] Trace completed - raw_output len: {}, hops count: {}", raw_output.len(), hops.len());
     
     Ok(TraceResult {
         target: args.last().unwrap_or(&"unknown".to_string()).clone(),
@@ -540,12 +634,149 @@ fn parse_traceroute_line(line: &str) -> Option<HopData> {
     }
 }
 
-fn main() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .init();
+fn setup_logging() -> Result<(), Box<dyn std::error::Error>> {
+    use tracing_subscriber::{
+        fmt,
+        layer::SubscriberExt,
+        util::SubscriberInitExt,
+        EnvFilter,
+    };
+    use tracing_appender::rolling;
+    
+    // Get app data directory
+    let app_data_dir = directories::BaseDirs::new()
+        .map(|dirs| dirs.data_dir().join("TraceRT"))
+        .or_else(|| {
+            std::env::current_dir().ok().map(|dir| dir.join("data"))
+        })
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    
+    // Ensure log directory exists
+    let log_dir = app_data_dir.join("logs");
+    std::fs::create_dir_all(&log_dir)?;
+    
+    // Create daily rolling file appender
+    let file_appender = rolling::daily(&log_dir, "tracert.log");
+    
+    let pid = std::process::id();
+    let timer = tracing_subscriber::fmt::time::OffsetTime::local_rfc_3339().unwrap_or(tracing_subscriber::fmt::time::SystemTime);
+    
+    let file_layer = fmt::layer()
+        .with_timer(timer.clone())
+        .with_writer(file_appender)
+        .with_ansi(false)
+        .with_filter(EnvFilter::from_default_env().add_directive("trace_rt=debug".parse()?));
+        
+    let console_layer = fmt::layer()
+        .with_timer(timer)
+        .with_writer(std::io::stderr)
+        .with_filter(EnvFilter::from_default_env().add_directive("trace_rt=debug".parse()?));
+    
+    tracing_subscriber::registry()
+        .with(file_layer)
+        .with(console_layer)
+        .try_init()
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        
+    tracing::info!("[LIFECYCLE] App starting, PID={}", pid);
+    tracing::info!("[LIFECYCLE] Log file located at: {:?}", log_dir.join("tracert.log"));
+    
+    Ok(())
+}
 
+fn setup_panic_hook() {
+    std::panic::set_hook(Box::new(|panic_info| {
+        let pid = std::process::id();
+        let backtrace = std::backtrace::Backtrace::capture();
+        
+        tracing::error!(
+            "[LIFECYCLE] Application panicked PID={}\npanic info: {}\nbacktrace: {:?}",
+            pid,
+            panic_info,
+            backtrace
+        );
+        
+        eprintln!(
+            "[LIFECYCLE] Application panicked PID={}\npanic info: {}\nbacktrace: {:?}",
+            pid,
+            panic_info,
+            backtrace
+        );
+    }));
+}
+
+fn setup_ctrlc_handler() {
+    ctrlc::set_handler(move || {
+        let pid = std::process::id();
+        tracing::info!("[LIFECYCLE] Received Ctrl+C signal, PID={}", pid);
+        cleanup_lock_file();
+        std::process::exit(0);
+    }).expect("Error setting Ctrl+C handler");
+}
+
+fn main() {
+    // Setup logging first
+    if let Err(e) = setup_logging() {
+        eprintln!("Failed to setup logging: {}", e);
+        std::process::exit(1);
+    }
+    
+    // Setup panic hook
+    setup_panic_hook();
+    
+    // Setup Ctrl+C handler
+    setup_ctrlc_handler();
+    
+    // Get app data directory and setup single instance guard
+    let app_data_dir = directories::BaseDirs::new()
+        .map(|dirs| dirs.data_dir().join("TraceRT"))
+        .or_else(|| {
+            std::env::current_dir().ok().map(|dir| dir.join("data"))
+        })
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    
+    std::fs::create_dir_all(&app_data_dir).expect("Failed to create app data directory");
+    
+    if let Err(e) = setup_single_instance_guard(&app_data_dir) {
+        tracing::error!("Failed to setup single instance guard: {}", e);
+        std::process::exit(1);
+    }
+    
+    let pid = std::process::id();
+    tracing::info!("[LIFECYCLE] Setup complete, PID={}", pid);
+    
     tauri::Builder::default()
+        .setup(|app| {
+            tracing::info!("[LIFECYCLE] App setup completed, PID={}", std::process::id());
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            match event {
+                tauri::WindowEvent::CloseRequested { .. } => {
+                    tracing::info!("[WINDOW] Close requested for window: {}", window.label());
+                }
+                tauri::WindowEvent::Destroyed => {
+                    tracing::info!("[WINDOW] Window destroyed: {}", window.label());
+                }
+                tauri::WindowEvent::Focused(focused) => {
+                    if *focused {
+                        tracing::info!("[WINDOW] Window focused: {}", window.label());
+                    } else {
+                        tracing::info!("[WINDOW] Window unfocused: {}", window.label());
+                    }
+                }
+                tauri::WindowEvent::Moved(_) => {
+                    tracing::info!("[WINDOW] Window moved: {}", window.label());
+                }
+                tauri::WindowEvent::Resized(_) => {
+                    tracing::info!("[WINDOW] Window resized: {}", window.label());
+                }
+                _ => {
+                    // Other events, log them if needed
+                    tracing::debug!("[WINDOW] Window event for '{}': {:?}", window.label(), event);
+                }
+            }
+        })
         .manage(AppState {
             running_traces: Arc::new(Mutex::new(HashMap::new())),
         })
@@ -557,6 +788,27 @@ fn main() {
             log_warn,
             log_error,
         ])
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
+        .and_then(|app| {
+            tracing::info!("[LIFECYCLE] App built successfully, PID={}", std::process::id());
+            app.run(|_app_handle, event| {
+                match event {
+                    tauri::RunEvent::ExitRequested { .. } => {
+                        tracing::info!("[LIFECYCLE] Exit requested, PID={}", std::process::id());
+                    }
+                    tauri::RunEvent::Ready => {
+                        tracing::info!("[LIFECYCLE] App ready, PID={}", std::process::id());
+                    }
+                    tauri::RunEvent::WindowEvent { label, event, .. } => {
+                        tracing::debug!("[LIFECYCLE] Window event - {}: {:?}", label, event);
+                    }
+                    _ => {
+                        tracing::debug!("[LIFECYCLE] App event: {:?}", event);
+                    }
+                }
+            })
+        })
         .expect("error while running tauri application");
+        
+    tracing::info!("[LIFECYCLE] App shutting down, PID={}", pid);
 }
