@@ -311,7 +311,7 @@ async fn execute_trace_with_cancel(
                     }
                     Err(e) => {
                         let error_msg = format!("stdout read error: {}", e);
-                        tracing::error!('[TRACE] {}', error_msg);
+                        tracing::error!("[TRACE] {}", error_msg);
                         return Err(error_msg);
                     }
                 }
@@ -321,7 +321,7 @@ async fn execute_trace_with_cancel(
                     Ok(Some(line)) => {
                         stderr_lines_read += 1;
                         if stderr_lines_read <= max_diag_lines {
-                            tracing::debug!('[TRACE] stderr line {}: {}', stderr_lines_read, line);
+                            tracing::debug!("[TRACE] stderr line {}: {}", stderr_lines_read, line);
                         }
                         raw_output.push_str(&line);
                         raw_output.push('\n');
@@ -332,18 +332,18 @@ async fn execute_trace_with_cancel(
                         }
                     }
                     Ok(None) => {
-                        tracing::info!('[TRACE] stderr closed after reading {} lines', stderr_lines_read);
+                        tracing::info!("[TRACE] stderr closed after reading {} lines", stderr_lines_read);
                         stderr_closed = true;
                     }
                     Err(e) => {
                         let error_msg = format!("stderr read error: {}", e);
-                        tracing::error!('[TRACE] {}', error_msg);
+                        tracing::error!("[TRACE] {}", error_msg);
                         return Err(error_msg);
                     }
                 }
             }
             _ = cancel_notify.notified() => {
-                tracing::info!('[TRACE] Cancel notification received, killing process pid={}', child_pid);
+                tracing::info!("[TRACE] Cancel notification received, killing process pid={}", child_pid);
                 let _ = child.kill().await;
                 tracing::debug!("raw_output bytes: {}", raw_output.len());
                 tracing::debug!("raw_output preview: {}", raw_output.lines().take(5).collect::<Vec<_>>().join(" | "));
@@ -352,17 +352,17 @@ async fn execute_trace_with_cancel(
         }
     }
     
-    tracing::info!('[TRACE] Both stdout and stderr closed, about to wait for child process pid={}', child_pid);
+    tracing::info!("[TRACE] Both stdout and stderr closed, about to wait for child process pid={}", child_pid);
     
     // Wait for the process to finish
     let exit_status = child.wait().await
         .map_err(|e| {
             let error_msg = format!("Failed to wait for process: {}", e);
-            tracing::error!('[TRACE] {}', error_msg);
+            tracing::error!("[TRACE] {}", error_msg);
             error_msg
         })?;
     
-    tracing::info!('[TRACE] Child process finished with exit code: {}', exit_status.code().unwrap_or(-1));
+    tracing::info!("[TRACE] Child process finished with exit code: {}", exit_status.code().unwrap_or(-1));
     
     if !exit_status.success() {
         let error_msg = format!("{} failed with status code {}: process exited", cmd, exit_status.code().unwrap_or(-1));
