@@ -9,6 +9,7 @@ use tracing::{info, error};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use std::process::Stdio;
 use futures::stream::StreamExt;
+use lazy_static::lazy_static;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct GeoLocation {
@@ -138,9 +139,68 @@ async fn run_trace(
     let start_time = chrono::Utc::now().to_rfc3339();
     let end_time = Some(chrono::Utc::now().to_rfc3339());
 
+    // The actual implementation is now in execute_trace_with_cancel
+    unreachable!()
+}
+
+async fn execute_trace_with_cancel(cmd: String, args: Vec<String>, cancel_token: CancellationToken) -> Result<TraceResult, String> {
+    // Create the command
+    let mut child = Command::new(&cmd)
+        .args(&args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to start {}: {}", cmd, e))?;
+
+    // Create a future that monitors both the process and the cancellation
+    let stdout = child.stdout.take().ok_or_else(|| "Failed to get stdout".to_string())?;
+    let mut reader = BufReader::new(stdout).lines();
+    
+    let mut raw_output = String::new();
+    let mut hops = Vec::new();
+    let start_time = chrono::Utc::now().to_rfc3339();
+    
+    loop {
+        tokio::select! {
+            line_result = reader.next_line() => {
+                match line_result {
+                    Ok(Some(line)) => {
+                        raw_output.push_str(&line);
+                        raw_output.push('\n');
+                        
+                        // Parse the line for hop data if it looks like a traceroute line
+                        if let Some(hop_data) = parse_traceroute_line(&line) {
+                            hops.push(hop_data);
+                        }
+                    },
+                    Ok(None) => break, // EOF reached
+                    Err(e) => return Err(format!("Error reading output: {}", e)),
+                }
+            },
+            _ = cancel_token.cancelled() => {
+                // Cancel the process
+                let _ = child.kill().await;
+                return Err("Trace cancelled by user".to_string());
+            }
+        }
+    }
+    
+    // Wait for the process to finish
+    let exit_status = child.wait().await
+        .map_err(|e| format!("Failed to wait for process: {}", e))?;
+    
+    if !exit_status.success() {
+        let stderr_output = tokio::fs::read_to_string(child.stderr.as_mut().unwrap())
+            .await
+            .unwrap_or_else(|_| "Failed to read stderr".to_string());
+        return Err(format!("{} failed with status {}: {}", cmd, exit_status, stderr_output));
+    }
+    
+    let end_time = Some(chrono::Utc::now().to_rfc3339());
+    
     Ok(TraceResult {
-        target,
-        resolved_ip: None, // Will be resolved by the traceroute command
+        target: args.last().unwrap_or(&"unknown".to_string()).clone(),
+        resolved_ip: None,
         hops,
         raw_output,
         start_time,
@@ -148,33 +208,15 @@ async fn run_trace(
     })
 }
 
-async fn execute_trace_command(cmd: String, args: Vec<String>) -> Result<String, String> {
-    let output = Command::new(&cmd)
-        .args(&args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| format!("Failed to execute {}: {}", cmd, e))?;
-
-    let stdout = String::from_utf8(output.stdout)
-        .map_err(|_| "Invalid UTF-8 in stdout".to_string())?;
-    let stderr = String::from_utf8(output.stderr)
-        .map_err(|_| "Invalid UTF-8 in stderr".to_string())?;
-
-    if !output.status.success() {
-        return Err(format!("{} failed: {}", cmd, stderr));
-    }
-
-    Ok(stdout)
-}
-
 #[tauri::command]
 async fn stop_trace(trace_id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    // For now, we don't implement stopping since we wait for completion
-    // In a real implementation, you'd need to store the spawned task handle
-    // and cancel it here
-    Ok(())
+    let mut running_traces = state.running_traces.lock().await;
+    if let Some(running_trace) = running_traces.get(&trace_id) {
+        running_trace.cancel_token.cancel();
+        Ok(())
+    } else {
+        Err("Trace not found".to_string())
+    }
 }
 
 #[tauri::command]
@@ -195,20 +237,28 @@ fn is_valid_target(target: &str) -> bool {
     // Basic validation to prevent command injection
     // Allow alphanumeric, dots, hyphens, colons (for IPv6), and underscores
     // Also allow basic domain names
-    let re = regex::Regex::new(r"^[a-zA-Z0-9.-_:]+$").unwrap();
-    if !re.is_match(target) {
-        return false;
-    }
     
     // Check for potentially dangerous characters
     if target.contains(' ') || target.contains('&') || target.contains('|') || 
-       target.contains(';') || target.contains('`') || target.contains('$') {
+       target.contains(';') || target.contains('`') || target.contains('$') ||
+       target.contains('(') || target.contains(')') || target.contains('<') ||
+       target.contains('>') || target.contains('"') || target.contains('\'') {
         return false;
     }
     
-    // Additional validation: ensure it looks like a valid IP or domain
+    // Check for valid IP or domain format
     let is_ip = target.parse::<std::net::IpAddr>().is_ok();
-    let is_domain = target.chars().any(|c| c == '.') && target.len() >= 3;
+    let is_domain = {
+        // Basic domain validation: letters, digits, dots, hyphens
+        // Must contain at least one dot and not start/end with special chars
+        !target.is_empty() &&
+        target.len() <= 255 &&
+        target.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_') &&
+        target.starts_with(|c: char| c.is_ascii_alphanumeric()) &&
+        target.ends_with(|c: char| c.is_ascii_alphanumeric()) &&
+        target.chars().any(|c| c == '.') &&  // Must contain at least one dot
+        !target.contains("..")  // No double dots
+    };
     
     is_ip || is_domain
 }
