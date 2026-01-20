@@ -144,14 +144,11 @@ export const useTraceSimulation = () => {
       // Call the Tauri command to run actual traceroute
       let rawOutput: string;
       
-      // Check if running in Tauri context
-      const isTauriContext = typeof window !== 'undefined' && (window as any).__TAURI__;
-      
-      if (isTauriContext) {
-        // Running in Tauri context
+      // Use Tauri invoke
+      if (typeof window !== 'undefined' && (window as any).__TAURI__) {
         rawOutput = await (window as any).__TAURI__.invoke("run_traceroute", { target });
       } else {
-        // Fallback for browser development - return mock data
+        // Fallback for browser development
         rawOutput = `Tracing route to ${target} [${target}]
 over a maximum of 30 hops:
 
