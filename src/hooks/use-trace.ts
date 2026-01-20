@@ -50,7 +50,7 @@ export const useTrace = () => {
       return startSimTrace(target);
     }
 
-    logger.info('Starting real traceroute to:', target);
+    logger.info(`Starting real traceroute to: ${target}`);
     setIsTracing(true);
     setCurrentHops([]);
     setResult(null);
