@@ -3,8 +3,6 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
-use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::Once;
@@ -13,7 +11,7 @@ use tokio::sync::Mutex;
 use tracing::info;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use std::process::Stdio;
-use sysinfo::System;
+use sysinfo::{System, SystemExt};
 use std::env;
 use std::process;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -25,7 +23,7 @@ static INITIALIZATION_GUARD: Once = Once::new();
 
 // Function to check if a process with given PID is running
 fn is_process_running(pid: u32) -> bool {
-    let mut system = System::new_all();
+    let mut system = System::new();
     system.refresh_processes();
     system.processes().values().any(|process| process.pid().as_u32() == pid)
 }
@@ -58,11 +56,6 @@ fn setup_single_instance_guard(app_data_dir: &Path) -> Result<(), Box<dyn std::e
         LOCK_FILE_PATH = Some(lock_file_path.clone());
     }
     SINGLE_INSTANCE_ACTIVE.store(true, Ordering::SeqCst);
-    
-    // Register cleanup function
-    std::atexit(move || {
-        cleanup_lock_file();
-    });
     
     tracing::info!("[SINGLE_INSTANCE] Lock acquired for PID {}", current_pid);
     Ok(())
