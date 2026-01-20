@@ -89,15 +89,16 @@ async fn run_trace(
     // Create a unique ID for this trace
     let trace_id = uuid::Uuid::new_v4().to_string();
     
-    // Create cancellation token
-    let cancel_token = CancellationToken::new();
+    // Create notification for cancellation
+    let cancel_notify = Arc::new(Notify::new());
+    let cancel_clone = cancel_notify.clone();
     
     // Execute the traceroute command in a cancellable task
-    let trace_future = execute_trace_with_cancel(cmd, args, cancel_token.clone());
+    let trace_future = execute_trace_with_cancel(cmd, args, cancel_clone);
     let handle = tokio::spawn(async move {
         tokio::select! {
             result = trace_future => result,
-            _ = cancel_token.cancelled() => Err("Trace cancelled by user".to_string()),
+            _ = cancel_notify.notified() => Err("Trace cancelled by user".to_string()),
         }
     });
     
@@ -106,7 +107,7 @@ async fn run_trace(
         let mut running_traces = state.running_traces.lock().await;
         running_traces.insert(
             trace_id.clone(), 
-            RunningTrace { cancel_token, handle }
+            RunningTrace { cancel_notify, handle }
         );
     }
     
