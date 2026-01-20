@@ -143,7 +143,7 @@ pub struct HopData {
     pub host: Option<String>,
     pub ip: Option<String>,
     #[serde(rename = "latencies")]
-    pub latency_samples: Vec<Option<f64>>,
+    pub latencies: Vec<Option<f64>>,
     #[serde(rename = "avgLatency")]
     pub avg_latency: Option<f64>,
     pub status: String, // "success", "timeout", "pending"
@@ -281,7 +281,11 @@ async fn execute_trace_with_cancel(
     let mut stderr_lines_read = 0;
     let max_diag_lines = 10; // Only log first N lines to avoid spam
     
-    loop {
+    // Continue reading from both stdout and stderr until both are closed
+    let mut stdout_closed = false;
+    let mut stderr_closed = false;
+    
+    while !stdout_closed || !stderr_closed {
         tokio::select! {
             line = out_reader.next_line() => {
                 match line {
@@ -303,11 +307,11 @@ async fn execute_trace_with_cancel(
                     }
                     Ok(None) => {
                         tracing::info!("[TRACE] stdout closed after reading {} lines", stdout_lines_read);
-                        break; // stdout closed, process likely finished
+                        stdout_closed = true;
                     }
                     Err(e) => {
                         let error_msg = format!("stdout read error: {}", e);
-                        tracing::error!("[TRACE] {}", error_msg);
+                        tracing::error!('[TRACE] {}', error_msg);
                         return Err(error_msg);
                     }
                 }
@@ -317,7 +321,7 @@ async fn execute_trace_with_cancel(
                     Ok(Some(line)) => {
                         stderr_lines_read += 1;
                         if stderr_lines_read <= max_diag_lines {
-                            tracing::debug!("[TRACE] stderr line {}: {}", stderr_lines_read, line);
+                            tracing::debug!('[TRACE] stderr line {}: {}', stderr_lines_read, line);
                         }
                         raw_output.push_str(&line);
                         raw_output.push('\n');
@@ -328,18 +332,18 @@ async fn execute_trace_with_cancel(
                         }
                     }
                     Ok(None) => {
-                        tracing::info!("[TRACE] stderr closed after reading {} lines", stderr_lines_read);
-                        // Don't break here, stdout might still have data
+                        tracing::info!('[TRACE] stderr closed after reading {} lines', stderr_lines_read);
+                        stderr_closed = true;
                     }
                     Err(e) => {
                         let error_msg = format!("stderr read error: {}", e);
-                        tracing::error!("[TRACE] {}", error_msg);
+                        tracing::error!('[TRACE] {}', error_msg);
                         return Err(error_msg);
                     }
                 }
             }
             _ = cancel_notify.notified() => {
-                tracing::info!("[TRACE] Cancel notification received, killing process pid={}", child_pid);
+                tracing::info!('[TRACE] Cancel notification received, killing process pid={}', child_pid);
                 let _ = child.kill().await;
                 tracing::debug!("raw_output bytes: {}", raw_output.len());
                 tracing::debug!("raw_output preview: {}", raw_output.lines().take(5).collect::<Vec<_>>().join(" | "));
@@ -348,17 +352,17 @@ async fn execute_trace_with_cancel(
         }
     }
     
-    tracing::info!("[TRACE] About to wait for child process pid={}", child_pid);
+    tracing::info!('[TRACE] Both stdout and stderr closed, about to wait for child process pid={}', child_pid);
     
     // Wait for the process to finish
     let exit_status = child.wait().await
         .map_err(|e| {
             let error_msg = format!("Failed to wait for process: {}", e);
-            tracing::error!("[TRACE] {}", error_msg);
+            tracing::error!('[TRACE] {}', error_msg);
             error_msg
         })?;
     
-    tracing::info!("[TRACE] Child process finished with exit code: {}", exit_status.code().unwrap_or(-1));
+    tracing::info!('[TRACE] Child process finished with exit code: {}', exit_status.code().unwrap_or(-1));
     
     if !exit_status.success() {
         let error_msg = format!("{} failed with status code {}: process exited", cmd, exit_status.code().unwrap_or(-1));
@@ -517,7 +521,7 @@ fn parse_traceroute_line(line: &str) -> Option<HopData> {
             hop: hop_num,
             host: None,
             ip: None,
-            latency_samples: vec![None, None, None], // Three timeouts
+            latencies: vec![None, None, None], // Three timeouts
             avg_latency: None,
             status: "timeout".to_string(),
             geo: None,
@@ -531,7 +535,7 @@ fn parse_traceroute_line(line: &str) -> Option<HopData> {
         // Or: "1    1 ms    1 ms    1 ms    192.168.1.1"
         // Or: "1    *        *        *     Request timed out."
         
-        let mut latency_samples = Vec::new();
+        let mut latencies = Vec::new();
         let mut ip_part = None;
         let mut host_part = None;
         
@@ -547,13 +551,13 @@ fn parse_traceroute_line(line: &str) -> Option<HopData> {
                 let time_str = part.strip_suffix("ms").unwrap_or(part);
                 let time_str = time_str.trim_start_matches('<'); // Handle "<1" case
                 if let Ok(time) = time_str.trim().parse::<f64>() {
-                    latency_samples.push(Some(time));
+                    latencies.push(Some(time));
                 } else {
-                    latency_samples.push(None);
+                    latencies.push(None);
                 }
                 latency_count += 1;
             } else if part == "*" {
-                latency_samples.push(None);
+                latencies.push(None);
                 latency_count += 1;
             } else {
                 // This might be IP or host, break out of latency parsing
@@ -594,7 +598,7 @@ fn parse_traceroute_line(line: &str) -> Option<HopData> {
         }
         
         // Calculate average latency if we have valid samples
-        let valid_latencies: Vec<f64> = latency_samples.iter()
+        let valid_latencies: Vec<f64> = latencies.iter()
             .filter_map(|opt| *opt)
             .collect();
         
@@ -608,7 +612,7 @@ fn parse_traceroute_line(line: &str) -> Option<HopData> {
             hop: hop_num,
             host: host_part,
             ip: ip_part,
-            latency_samples,
+            latencies,
             avg_latency,
             status: if !valid_latencies.is_empty() { "success".to_string() } else { "timeout".to_string() },
             geo: None,
@@ -618,7 +622,7 @@ fn parse_traceroute_line(line: &str) -> Option<HopData> {
     #[cfg(unix)]
     {
         // Unix format: "1  192.168.1.1 (192.168.1.1)  1.234 ms  2.345 ms  3.456 ms"
-        let mut latency_samples = Vec::new();
+        let mut latencies = Vec::new();
         let mut ip_part = None;
         let mut host_part = None;
         
@@ -653,14 +657,14 @@ fn parse_traceroute_line(line: &str) -> Option<HopData> {
             if part.ends_with("ms") {
                 let time_str = part.strip_suffix("ms")?;
                 let time = time_str.parse::<f64>().ok()?;
-                latency_samples.push(Some(time));
+                latencies.push(Some(time));
             } else if *part == "*" {
-                latency_samples.push(None);
+                latencies.push(None);
             }
         }
         
         // Calculate average latency if we have valid samples
-        let valid_latencies: Vec<f64> = latency_samples.iter()
+        let valid_latencies: Vec<f64> = latencies.iter()
             .filter_map(|opt| *opt)
             .collect();
         
@@ -674,7 +678,7 @@ fn parse_traceroute_line(line: &str) -> Option<HopData> {
             hop: hop_num,
             host: host_part,
             ip: ip_part,
-            latency_samples,
+            latencies,
             avg_latency,
             status: if !valid_latencies.is_empty() { "success".to_string() } else { "timeout".to_string() },
             geo: None,

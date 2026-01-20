@@ -56,18 +56,23 @@ export function useTraceStream(activeTraceId: string | null) {
           setCompletion(event.payload);
         });
         
-        unlistenRef.current = unlistenLine;
+        // Store both unlisten functions for proper cleanup
+        unlistenRef.current = () => {
+          if (unlistenLine) {
+            unlistenLine();
+          }
+          if (unlistenComplete) {
+            unlistenComplete();
+          }
+        };
       } catch (error) {
         console.error('[useTraceStream] Failed to setup event listeners:', error);
       }
     })();
 
     return () => {
-      if (unlistenLine) {
-        unlistenLine();
-      }
-      if (unlistenComplete) {
-        unlistenComplete();
+      if (unlistenRef.current && typeof unlistenRef.current === 'function') {
+        unlistenRef.current();
       }
     };
   }, []);
