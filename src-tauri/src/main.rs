@@ -87,10 +87,6 @@ async fn run_trace(
     // Create a unique ID for this trace
     let trace_id = uuid::Uuid::new_v4().to_string();
     
-    // Create notification for cancellation
-    let cancel_clone = cancel_notify.clone();
-    
-
     let cancel_notify = Arc::new(Notify::new());
     let cancel_for_task = cancel_notify.clone();
     let cancel_for_exec = cancel_notify.clone();
