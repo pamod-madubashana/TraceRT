@@ -13,10 +13,7 @@ use sysinfo::{System, SystemExt, ProcessExt, PidExt};
 use std::env;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tracing_subscriber::Layer;
-
-
-use tauri::{AppHandle, Manager};
-use serde::Serialize;
+use tauri::{AppHandle, Emitter};
 
 #[derive(Serialize, Clone)]
 struct TraceLineEvent {
@@ -790,6 +787,10 @@ fn main() {
                 }
                 tauri::RunEvent::WindowEvent { label, event, .. } => {
                     tracing::debug!("[LIFECYCLE] Window event - {}: {:?}", label, event);
+                }
+                _ => {
+                    // Handle all other events
+                    tracing::debug!("[LIFECYCLE] Other event: {:?}", event);
                 }
             }
         });
