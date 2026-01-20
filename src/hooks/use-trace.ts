@@ -207,52 +207,42 @@ export const useTraceSimulation = () => {
     setCurrentHops([]);
     setResult(null);
 
+    const startTime = new Date();
+
     try {
-      const startTime = new Date();
-      
-      // Call the Tauri command to run actual traceroute
-      let rawOutput: string;
-      
-      // Use Tauri invoke - proper Tauri v2 detection
-      if (isTauri()) {
-        rawOutput = await (window as any).__TAURI__.invoke("run_traceroute", { target });
-        console.log("REAL TRACEROUTE OUTPUT START", rawOutput.slice(0, 200));
-      } else {
-        // Force error - no fallback for real tracing
-        throw new Error("Tauri context not available - cannot perform real traceroute. Run as desktop app.");
+      if (!isTauri()) {
+        throw new Error("Tauri context not available - run as desktop app.");
       }
-      
-      // Parse the output to extract hop data
+
+      // ✅ Use the official invoke API (not window.__TAURI__)
+      const rawOutput = await invoke<string>("run_traceroute", { target });
+
       const hops = parseTracerouteOutput(rawOutput, target);
-      
-      // Add placeholder geo data for visualization
+
       const hopsWithGeo = hops.map((hop, index) => ({
         ...hop,
-        geo: generatePlaceholderGeo(index, hops.length)
+        geo: generatePlaceholderGeo(index, hops.length),
       }));
-      
-      // Update hops progressively for UI feedback
+
       for (let i = 0; i < hopsWithGeo.length; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 100)); // Small delay for visual effect
+        await new Promise((r) => setTimeout(r, 100));
         setCurrentHops((prev) => [...prev, hopsWithGeo[i]]);
       }
 
       setResult({
         target,
-        resolvedIp: target, // In a real implementation, this would be resolved from DNS
+        resolvedIp: target,
         hops: hopsWithGeo,
         rawOutput,
         startTime,
         endTime: new Date(),
       });
     } catch (error) {
-      console.error("Traceroute error:", error);
-      // Handle error case
       setResult({
         target,
         hops: [],
         rawOutput: `Error: ${(error as Error).message}`,
-        startTime: new Date(),
+        startTime,
         endTime: new Date(),
       });
     } finally {
@@ -260,10 +250,5 @@ export const useTraceSimulation = () => {
     }
   }, []);
 
-  return {
-    isTracing,
-    result,
-    currentHops,
-    startTrace,
-  };
+  return { isTracing, result, currentHops, startTrace };
 };
