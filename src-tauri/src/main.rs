@@ -11,23 +11,23 @@ use std::process::Stdio;
 
 
 #[tauri::command]
-fn log_debug(message: &str) {
-    log::debug!("{}", message);
+fn log_debug(message: String) {
+    tracing::debug!("{}", message);
 }
 
 #[tauri::command]
-fn log_info(message: &str) {
-    log::info!("{}", message);
+fn log_info(message: String) {
+    tracing::info!("{}", message);
 }
 
 #[tauri::command]
-fn log_warn(message: &str) {
-    log::warn!("{}", message);
+fn log_warn(message: String) {
+    tracing::warn!("{}", message);
 }
 
 #[tauri::command]
-fn log_error(message: &str) {
-    log::error!("{}", message);
+fn log_error(message: String) {
+    tracing::error!("{}", message);
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -469,7 +469,7 @@ fn parse_traceroute_line(line: &str) -> Option<HopData> {
 
 fn main() {
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
+        .with_max_level(tracing::Level::DEBUG)
         .init();
 
     tauri::Builder::default()
