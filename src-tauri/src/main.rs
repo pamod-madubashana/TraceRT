@@ -18,7 +18,6 @@ use tracing_subscriber::Layer;
 // Global variables for single instance guard
 static mut LOCK_FILE_PATH: Option<std::path::PathBuf> = None;
 static SINGLE_INSTANCE_ACTIVE: AtomicBool = AtomicBool::new(false);
-static INITIALIZATION_GUARD: Once = Once::new();
 
 // Function to check if a process with given PID is running
 fn is_process_running(pid: u32) -> bool {
