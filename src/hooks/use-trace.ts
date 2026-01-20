@@ -34,8 +34,13 @@ export const useTrace = () => {
   // Fallback to simulation if requested or Tauri unavailable
   const useSimulation = USE_SIM || typeof window.__TAURI_INTERNALS__ === 'undefined';
   
-  const { startTrace: startSimTrace } = useTraceSimulation();
+  const { startTrace: startSimTrace, isTracing: isSimTracing, result: simResult, currentHops: simHops } = useTraceSimulation();
 
+  // When using simulation, proxy the simulation hook's state
+  const effectiveIsTracing = useSimulation ? isSimTracing : isTracing;
+  const effectiveResult = useSimulation ? simResult : result;
+  const effectiveHops = useSimulation ? simHops : currentHops;
+  
   const startTrace = useCallback(async (target: string, options: TraceOptions = {}) => {
     logger.debug(`startTrace called with target: ${target}, options:`, options);
     
@@ -119,9 +124,9 @@ export const useTrace = () => {
   }, [isTracing, useSimulation]);
 
   return {
-    isTracing,
-    result,
-    currentHops,
+    isTracing: effectiveIsTracing,
+    result: effectiveResult,
+    currentHops: effectiveHops,
     error,
     startTrace,
     stopTrace,

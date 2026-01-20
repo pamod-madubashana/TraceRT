@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import { HopData, TraceResult, GeoLocation } from "@/types/trace";
+import { logger } from "@/lib/logger";
 
 // Sample geo locations for simulation
 const geoLocations: GeoLocation[] = [
@@ -92,20 +93,28 @@ export const useTraceSimulation = () => {
   const [currentHops, setCurrentHops] = useState<HopData[]>([]);
 
   const startTrace = useCallback(async (target: string) => {
+    logger.debug(`Simulation startTrace called with target: ${target}`);
+    
     setIsTracing(true);
     setCurrentHops([]);
     setResult(null);
 
     const startTime = new Date();
+    logger.info(`Generating simulated hops for target: ${target}`);
     const simulatedHops = simulateHops(target);
+    
+    logger.debug(`Generated ${simulatedHops.length} simulated hops`);
 
     // Simulate progressive hop discovery
+    logger.debug('Starting progressive hop simulation');
     for (let i = 0; i < simulatedHops.length; i++) {
       await new Promise((resolve) => setTimeout(resolve, 300 + Math.random() * 200));
       setCurrentHops((prev) => [...prev, simulatedHops[i]]);
+      logger.debug(`Added hop ${i + 1}/${simulatedHops.length}`);
     }
 
     const rawOutput = generateRawOutput(target, simulatedHops);
+    logger.debug('Generated raw output for simulation');
 
     setResult({
       target,
@@ -116,6 +125,7 @@ export const useTraceSimulation = () => {
       endTime: new Date(),
     });
 
+    logger.info(`Simulation completed successfully with ${simulatedHops.length} hops`);
     setIsTracing(false);
   }, []);
 
