@@ -96,7 +96,6 @@ async fn run_trace(
     let handle = tokio::spawn(async move {
         tokio::select! {
             result = trace_future => result,
-            _ = cancel_notify.notified() => Err("Trace cancelled by user".to_string()),
         }
     });
     
