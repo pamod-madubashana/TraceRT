@@ -3,13 +3,84 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs;
+use std::io::Write;
+use std::path::Path;
 use std::sync::Arc;
+use std::sync::Once;
 use tokio::process::Command;
 use tokio::sync::Mutex;
 use tracing::info;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use std::process::Stdio;
+use sysinfo::System;
+use std::env;
+use std::process;
+use std::sync::atomic::{AtomicBool, Ordering};
 
+// Global variables for single instance guard
+static mut LOCK_FILE_PATH: Option<std::path::PathBuf> = None;
+static SINGLE_INSTANCE_ACTIVE: AtomicBool = AtomicBool::new(false);
+static INITIALIZATION_GUARD: Once = Once::new();
+
+// Function to check if a process with given PID is running
+fn is_process_running(pid: u32) -> bool {
+    let mut system = System::new_all();
+    system.refresh_processes();
+    system.processes().values().any(|process| process.pid().as_u32() == pid)
+}
+
+// Function to create lock file and register cleanup
+fn setup_single_instance_guard(app_data_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let lock_file_path = app_data_dir.join("tracert.lock");
+    
+    // Check if lock file exists
+    if lock_file_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&lock_file_path) {
+            if let Ok(existing_pid) = content.trim().parse::<u32>() {
+                if is_process_running(existing_pid) {
+                    tracing::warn!("[SINGLE_INSTANCE] Second instance detected, PID {} is still running. Exiting.", existing_pid);
+                    eprintln!("[SINGLE_INSTANCE] Another instance is already running (PID {}). Exiting.", existing_pid);
+                    std::process::exit(1);
+                } else {
+                    tracing::info!("[SINGLE_INSTANCE] Lock file exists but process {} is not running. Removing stale lock.", existing_pid);
+                    let _ = std::fs::remove_file(&lock_file_path);
+                }
+            }
+        }
+    }
+    
+    // Create new lock file with current PID
+    let current_pid = std::process::id();
+    std::fs::write(&lock_file_path, current_pid.to_string())?;
+    
+    unsafe {
+        LOCK_FILE_PATH = Some(lock_file_path.clone());
+    }
+    SINGLE_INSTANCE_ACTIVE.store(true, Ordering::SeqCst);
+    
+    // Register cleanup function
+    std::atexit(move || {
+        cleanup_lock_file();
+    });
+    
+    tracing::info!("[SINGLE_INSTANCE] Lock acquired for PID {}", current_pid);
+    Ok(())
+}
+
+// Cleanup function to remove lock file
+fn cleanup_lock_file() {
+    if SINGLE_INSTANCE_ACTIVE.load(Ordering::SeqCst) {
+        unsafe {
+            if let Some(ref lock_path) = LOCK_FILE_PATH {
+                if std::fs::remove_file(lock_path).is_ok() {
+                    tracing::info!("[SINGLE_INSTANCE] Lock file cleaned up for PID {}", std::process::id());
+                }
+            }
+        }
+        SINGLE_INSTANCE_ACTIVE.store(false, Ordering::SeqCst);
+    }
+}
 
 #[tauri::command]
 fn log_debug(message: String) {
