@@ -1,4 +1,4 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![windows_subsystem = "console"]
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -8,6 +8,27 @@ use tokio::sync::Mutex;
 use tracing::info;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use std::process::Stdio;
+
+
+#[tauri::command]
+fn log_debug(message: &str) {
+    log::debug!("{}", message);
+}
+
+#[tauri::command]
+fn log_info(message: &str) {
+    log::info!("{}", message);
+}
+
+#[tauri::command]
+fn log_warn(message: &str) {
+    log::warn!("{}", message);
+}
+
+#[tauri::command]
+fn log_error(message: &str) {
+    log::error!("{}", message);
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct GeoLocation {
@@ -456,6 +477,15 @@ fn main() {
             running_traces: Arc::new(Mutex::new(HashMap::new())),
         })
         .invoke_handler(tauri::generate_handler![run_trace, stop_trace])
+        .invoke_handler(tauri::generate_handler![
+            log_debug,
+            log_info,
+            log_warn,
+            log_error,
+            download_file,
+            cancel_download,
+            open_file_in_folder
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
