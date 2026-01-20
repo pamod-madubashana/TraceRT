@@ -1,20 +1,7 @@
 import { useState, useCallback } from "react";
 import { HopData, TraceResult, GeoLocation } from "@/types/trace";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-// Type declaration for Tauri invoke
-interface Window {
-  __TAURI__: {
-    invoke: (cmd: string, args?: Record<string, unknown>) => Promise<any>;
-  };
-}
 
-declare global {
-  interface Window {
-    __TAURI__: {
-      invoke: (cmd: string, args?: Record<string, unknown>) => Promise<any>;
-    };
-  }
-}
 
 // Improved parser for different traceroute output formats
 const parseTracerouteOutput = (output: string, target: string): HopData[] => {
