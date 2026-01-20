@@ -214,7 +214,7 @@ export const useTraceSimulation = () => {
       let rawOutput: string;
       
       // Use Tauri invoke - proper Tauri v2 detection
-      if (isTauri) {
+      if (isTauri()) {
         rawOutput = await (window as any).__TAURI__.invoke("run_traceroute", { target });
         console.log("REAL TRACEROUTE OUTPUT START", rawOutput.slice(0, 200));
       } else {
