@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { HopData, TraceResult } from "@/types/trace";
 import { logger } from "@/lib/logger";
@@ -34,7 +34,7 @@ export const useTrace = () => {
   const [activeTraceId, setActiveTraceId] = useState<string | null>(null);
   
   // Use the streaming hook for real-time updates
-  const { lines, reset: resetLines } = useTraceStream(activeTraceId);
+  const { lines, completion, reset: resetLines } = useTraceStream(activeTraceId);
 
   // Fallback to simulation if requested or Tauri unavailable
   const useSimulation = USE_SIM || typeof window.__TAURI_INTERNALS__ === 'undefined';
@@ -45,6 +45,18 @@ export const useTrace = () => {
   const effectiveIsTracing = useSimulation ? isSimTracing : isTracing;
   const effectiveResult = useSimulation ? simResult : result;
   const effectiveHops = useSimulation ? simHops : currentHops;
+  
+  // Handle completion event from backend
+  useEffect(() => {
+    if (completion && !useSimulation) {
+      logger.info('Received trace completion event, updating state');
+      setResult(completion.result);
+      setCurrentHops(completion.result.hops);
+      setIsTracing(false);
+      setActiveTraceId(null);
+      resetLines();
+    }
+  }, [completion, useSimulation, resetLines]);
   
   const startTrace = useCallback(async (target: string, options: TraceOptions = {}) => {
     logger.debug(`startTrace called with target: ${target}, options:`, options);

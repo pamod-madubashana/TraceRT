@@ -1,5 +1,6 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useEffect, useRef, useState } from "react";
+import { TraceResult } from "@/types/trace";
 
 export type TraceLineEvent = {
   trace_id: string;
@@ -7,8 +8,14 @@ export type TraceLineEvent = {
   line: string;
 };
 
+export type TraceCompleteEvent = {
+  trace_id: string;
+  result: TraceResult;
+};
+
 export function useTraceStream(activeTraceId: string | null) {
   const [lines, setLines] = useState<TraceLineEvent[]>([]);
+  const [completion, setCompletion] = useState<TraceCompleteEvent | null>(null);
   const activeIdRef = useRef<string | null>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
 
@@ -26,31 +33,49 @@ export function useTraceStream(activeTraceId: string | null) {
       return;
     }
 
-    let unlisten: UnlistenFn | null = null;
+    let unlistenLine: UnlistenFn | null = null;
+    let unlistenComplete: UnlistenFn | null = null;
 
     (async () => {
       try {
-        unlisten = await listen<TraceLineEvent>("trace:line", (event) => {
+        // Listen for trace line events
+        unlistenLine = await listen<TraceLineEvent>("trace:line", (event) => {
           // ignore events from old traces
           if (!activeIdRef.current) return;
           if (event.payload.trace_id !== activeIdRef.current) return;
 
           setLines((prev) => [...prev, event.payload]);
         });
-        unlistenRef.current = unlisten;
+        
+        // Listen for trace completion events
+        unlistenComplete = await listen<TraceCompleteEvent>("trace:complete", (event) => {
+          // ignore events from old traces
+          if (!activeIdRef.current) return;
+          if (event.payload.trace_id !== activeIdRef.current) return;
+
+          setCompletion(event.payload);
+        });
+        
+        unlistenRef.current = unlistenLine;
       } catch (error) {
-        console.error('[useTraceStream] Failed to setup event listener:', error);
+        console.error('[useTraceStream] Failed to setup event listeners:', error);
       }
     })();
 
     return () => {
-      if (unlisten) {
-        unlisten();
+      if (unlistenLine) {
+        unlistenLine();
+      }
+      if (unlistenComplete) {
+        unlistenComplete();
       }
     };
   }, []);
 
-  const reset = () => setLines([]);
+  const reset = () => {
+    setLines([]);
+    setCompletion(null);
+  };
 
-  return { lines, reset };
+  return { lines, completion, reset };
 }

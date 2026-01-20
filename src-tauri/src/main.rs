@@ -22,6 +22,12 @@ struct TraceLineEvent {
   line: String,
 }
 
+#[derive(Serialize, Clone)]
+struct TraceCompleteEvent {
+  trace_id: String,
+  result: TraceResult,
+}
+
 fn emit_trace_line(app: &AppHandle, trace_id: &str, line_no: u32, line: &str) {
   let payload = TraceLineEvent {
     trace_id: trace_id.to_string(),
@@ -31,6 +37,16 @@ fn emit_trace_line(app: &AppHandle, trace_id: &str, line_no: u32, line: &str) {
 
   // emit to all windows (easy mode)
   let _ = app.emit("trace:line", payload);
+}
+
+fn emit_trace_complete(app: &AppHandle, trace_id: &str, result: &TraceResult) {
+  let payload = TraceCompleteEvent {
+    trace_id: trace_id.to_string(),
+    result: result.clone(),
+  };
+
+  // emit to all windows (easy mode)
+  let _ = app.emit("trace:complete", payload);
 }
 
 
@@ -354,14 +370,19 @@ async fn execute_trace_with_cancel(
     
     tracing::info!("[TRACE] Trace completed - raw_output len: {}, hops count: {}", raw_output.len(), hops.len());
     
-    Ok(TraceResult {
+    let result = TraceResult {
         target: args.last().unwrap_or(&"unknown".to_string()).clone(),
         resolved_ip: None,
         hops,
         raw_output,
         start_time,
         end_time,
-    })
+    };
+    
+    // Emit completion event to notify frontend
+    emit_trace_complete(&app, &trace_id, &result);
+    
+    Ok(result)
 }
 
 #[tauri::command]
@@ -473,8 +494,11 @@ fn parse_traceroute_line(line: &str) -> Option<HopData> {
     // Trim leading whitespace
     let line = line.trim();
     
-    // Skip empty lines
-    if line.is_empty() {
+    // Skip empty lines and header lines
+    if line.is_empty() || 
+       line.starts_with("Tracing") || 
+       line.starts_with("over a maximum") || 
+       line.starts_with("Trace complete") {
         return None;
     }
     
@@ -487,8 +511,8 @@ fn parse_traceroute_line(line: &str) -> Option<HopData> {
     // Extract hop number
     let hop_num = parts[0].parse::<u32>().ok()?;
     
-    // Check if it's a timeout line
-    if line.contains("Request timed out") || line.contains("*") {
+    // Check if it's a timeout line - specifically look for "Request timed out"
+    if line.contains("Request timed out") {
         return Some(HopData {
             hop: hop_num,
             host: None,
@@ -503,36 +527,70 @@ fn parse_traceroute_line(line: &str) -> Option<HopData> {
     // Parse based on OS format
     #[cfg(windows)]
     {
-        // Windows format: "1    1.234 ms    2.345 ms    3.456 ms    192.168.1.1"
+        // Windows format: "1    <1 ms    <1 ms    <1 ms    192.168.1.1"
+        // Or: "1    1 ms    1 ms    1 ms    192.168.1.1"
+        // Or: "1    *        *        *     Request timed out."
+        
         let mut latency_samples = Vec::new();
         let mut ip_part = None;
         let mut host_part = None;
         
-        let mut iter = parts.iter().skip(1); // Skip hop number
+        let mut i = 1; // Start after hop number
         
-        // Look for latency values
-        while let Some(part) = iter.next() {
+        // Process up to 3 latency values
+        let mut latency_count = 0;
+        while i < parts.len() && latency_count < 3 {
+            let part = parts[i];
+            
             if part.ends_with("ms") {
-                let time_str = part.strip_suffix("ms")?;
-                let time = time_str.parse::<f64>().ok()?;
-                latency_samples.push(Some(time));
-            } else if *part == "*" {
-                latency_samples.push(None);
-            } else if !part.contains("ms") && part != &"ms" {
-                // This might be an IP or host
-                if part.starts_with("Request") || part.starts_with("Tracing") {
-                    continue;
+                // Handle cases like "<1 ms", "1 ms", "100 ms"
+                let time_str = part.strip_suffix("ms").unwrap_or(part);
+                let time_str = time_str.trim_start_matches('<'); // Handle "<1" case
+                if let Ok(time) = time_str.trim().parse::<f64>() {
+                    latency_samples.push(Some(time));
+                } else {
+                    latency_samples.push(None);
                 }
-                
-                // If it looks like an IP or hostname
-                if part.contains('.') || part.contains(':') || part.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '.') {
+                latency_count += 1;
+            } else if part == "*" {
+                latency_samples.push(None);
+                latency_count += 1;
+            } else {
+                // This might be IP or host, break out of latency parsing
+                break;
+            }
+            i += 1;
+        }
+        
+        // The remaining parts should contain IP/address
+        while i < parts.len() {
+            let part = parts[i];
+            // If it looks like an IP or hostname (not a latency value)
+            if !part.ends_with("ms") && part != "ms" && part != "*" {
+                if part.contains('.') || part.contains(':') || part.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '.' || c == '(' || c == ')' || c == '[' || c == ']') {
                     if ip_part.is_none() {
-                        ip_part = Some((*part).to_string());
-                    } else if host_part.is_none() {
-                        host_part = Some((*part).to_string());
+                        // Try to extract IP from part that might contain hostname and IP
+                        if part.contains('[') && part.contains(']') {
+                            // Format like "hostname [192.168.1.1]"
+                            if let Some(start) = part.find('[') {
+                                if let Some(end) = part.find(']') {
+                                    ip_part = Some(part[start+1..end].to_string());
+                                }
+                            }
+                            // Extract hostname separately if present
+                            if let Some(bracket_pos) = part.find('[') {
+                                let hostname_part = part[..bracket_pos].trim();
+                                if !hostname_part.is_empty() && hostname_part != "Request" && hostname_part != "tracert" {
+                                    host_part = Some(hostname_part.to_string());
+                                }
+                            }
+                        } else {
+                            ip_part = Some(part.to_string());
+                        }
                     }
                 }
             }
+            i += 1;
         }
         
         // Calculate average latency if we have valid samples
