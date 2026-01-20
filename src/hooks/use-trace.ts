@@ -197,7 +197,7 @@ const generatePlaceholderGeo = (index: number, totalHops: number): GeoLocation =
   };
 };
 
-export const useTraceSimulation = () => {
+export const useTrace = () => {
   const [isTracing, setIsTracing] = useState(false);
   const [result, setResult] = useState<TraceResult | null>(null);
   const [currentHops, setCurrentHops] = useState<HopData[]>([]);
