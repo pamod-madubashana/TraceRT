@@ -193,6 +193,7 @@ export const useTrace = () => {
   const tracingRef = useRef(false);
 
   const startTrace = useCallback(async (target: string) => {
+    console.log("TRACE INVOKE", Date.now(), target);
     // Prevent multiple simultaneous traces
     if (tracingRef.current) return;
     tracingRef.current = true;
