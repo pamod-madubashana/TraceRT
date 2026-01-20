@@ -91,7 +91,7 @@ async fn run_trace(
     let cancel_for_task = cancel_notify.clone();
     let cancel_for_exec = cancel_notify.clone();
     // Execute the traceroute command in a cancellable task
-    let trace_future = execute_trace_with_cancel(cmd, args, cancel_clone);
+    let trace_future = execute_trace_with_cancel(cmd, args, cancel_for_exec);
     let handle = tokio::spawn(async move {
         tokio::select! {
             result = trace_future => result,
