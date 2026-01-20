@@ -213,25 +213,18 @@ export const useTraceSimulation = () => {
       // Call the Tauri command to run actual traceroute
       let rawOutput: string;
       
-      // Use Tauri invoke
+      // Use Tauri invoke - stricter detection for real tracing
       const isTauri =
         typeof window !== "undefined" &&
-        typeof (window as any).__TAURI__ !== "undefined";
+        (window as any).__TAURI__ &&
+        typeof (window as any).__TAURI__.invoke === "function";
       
       if (isTauri) {
         rawOutput = await (window as any).__TAURI__.invoke("run_traceroute", { target });
-        console.log("RAW OUTPUT START", rawOutput.slice(0, 200));
+        console.log("REAL TRACEROUTE OUTPUT START", rawOutput.slice(0, 200));
       } else {
-        // Fallback for browser development
-        rawOutput = `Tracing route to ${target} [${target}]
-over a maximum of 30 hops:
-
-  1    <1 ms    <1 ms    <1 ms  192.168.1.1
-  2     2 ms     1 ms     1 ms  10.0.0.1
-  3     3 ms     2 ms     2 ms  ${target} [${target}]
-
-Trace complete.`;
-        console.log("USING FALLBACK MOCK OUTPUT");
+        // Force error - no fallback for real tracing
+        throw new Error("Tauri context not available - cannot perform real traceroute. Run as desktop app.");
       }
       
       // Parse the output to extract hop data
