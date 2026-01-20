@@ -12,9 +12,6 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[tauri::command]
 fn run_traceroute(target: String) -> Result<String, String> {
-    if !is_valid_target(&target) {
-        return Err("Invalid target: must contain only letters, digits, dots, dashes, colons, and underscores. Max 255 characters.".to_string());
-    }
 
     let target_clone = target.clone();
     let (tx, rx) = mpsc::channel();
