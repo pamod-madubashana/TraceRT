@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "TracerX"
+name = "NetTrace"
 version = "0.1.0"
 dependencies = [
  "chrono",

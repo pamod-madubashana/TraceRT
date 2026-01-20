@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "TracerX",
+        "title": "NetTrace",
         "width": 1200,
         "height": 800,
         "resizable": true,
