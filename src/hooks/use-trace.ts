@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { HopData, TraceResult } from "@/types/trace";
+import { logger } from "@/lib/logger";
 
 // Extend Window interface for Tauri internals
 declare global {
@@ -77,7 +78,7 @@ export const useTrace = () => {
       // Properly handle Tauri invoke errors
       const errorMessage = err instanceof Error ? err.message : "Unknown error occurred";
       setError(errorMessage);
-      console.error("Trace failed:", errorMessage);
+      logger.error("Trace failed:", errorMessage);
       
       // Reset state on error
       setIsTracing(false);
@@ -95,7 +96,7 @@ export const useTrace = () => {
     try {
       await invoke("stop_trace");
     } catch (err) {
-      console.error("Failed to stop trace:", err);
+      logger.error("Failed to stop trace:", err);
     }
   }, [isTracing, useSimulation]);
 
