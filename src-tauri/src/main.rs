@@ -217,19 +217,6 @@ async fn stop_trace(trace_id: String, state: tauri::State<'_, AppState>) -> Resu
     }
 }
 
-#[tauri::command]
-async fn stop_trace(trace_id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let mut processes = state.running_processes.lock().await;
-    if let Some(mut child) = processes.remove(&trace_id) {
-        child.kill()
-            .await
-            .map_err(|e| format!("Failed to kill process: {}", e))?;
-        info!("Successfully stopped trace with ID: {}", trace_id);
-        Ok(())
-    } else {
-        Err("Process not found".to_string())
-    }
-}
 
 fn is_valid_target(target: &str) -> bool {
     // Basic validation to prevent command injection
@@ -498,7 +485,7 @@ fn main() {
 
     tauri::Builder::default()
         .manage(AppState {
-            running_processes: Arc::new(Mutex::new(HashMap::new())),
+            running_traces: Arc::new(Mutex::new(HashMap::new())),
         })
         .invoke_handler(tauri::generate_handler![run_trace, stop_trace])
         .run(tauri::generate_context!())
