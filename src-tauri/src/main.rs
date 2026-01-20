@@ -144,7 +144,7 @@ async fn run_trace(
     unreachable!()
 }
 
-async fn execute_trace_with_cancel(cmd: String, args: Vec<String>, cancel_token: CancellationToken) -> Result<TraceResult, String> {
+async fn execute_trace_with_cancel(cmd: String, args: Vec<String>, cancel_notify: Arc<Notify>) -> Result<TraceResult, String> {
     // Create the command
     let mut child = Command::new(&cmd)
         .args(&args)
@@ -178,7 +178,7 @@ async fn execute_trace_with_cancel(cmd: String, args: Vec<String>, cancel_token:
                     Err(e) => return Err(format!("Error reading output: {}", e)),
                 }
             },
-            _ = cancel_token.cancelled() => {
+            _ = cancel_notify.notified() => {
                 // Cancel the process
                 let _ = child.kill().await;
                 return Err("Trace cancelled by user".to_string());
@@ -191,10 +191,7 @@ async fn execute_trace_with_cancel(cmd: String, args: Vec<String>, cancel_token:
         .map_err(|e| format!("Failed to wait for process: {}", e))?;
     
     if !exit_status.success() {
-        let stderr_output = tokio::fs::read_to_string(child.stderr.as_mut().unwrap())
-            .await
-            .unwrap_or_else(|_| "Failed to read stderr".to_string());
-        return Err(format!("{} failed with status {}: {}", cmd, exit_status, stderr_output));
+        return Err(format!("{} failed with status code {}: process exited", cmd, exit_status.code().unwrap_or(-1)));
     }
     
     let end_time = Some(chrono::Utc::now().to_rfc3339());
@@ -213,7 +210,7 @@ async fn execute_trace_with_cancel(cmd: String, args: Vec<String>, cancel_token:
 async fn stop_trace(trace_id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
     let mut running_traces = state.running_traces.lock().await;
     if let Some(running_trace) = running_traces.get(&trace_id) {
-        running_trace.cancel_token.cancel();
+        running_trace.cancel_notify.notify_one();
         Ok(())
     } else {
         Err("Trace not found".to_string())
