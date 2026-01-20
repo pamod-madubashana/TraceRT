@@ -1,5 +1,8 @@
 import { useState, useCallback } from "react";
 import { HopData, TraceResult, GeoLocation } from "@/types/trace";
+import { invoke } from "@tauri-apps/api/core";
+import { isTauri } from "@tauri-apps/api/core";
+
 
 // Type declaration for Tauri invoke
 interface Window {
@@ -214,18 +217,12 @@ export const useTraceSimulation = () => {
       let rawOutput: string;
       
       // Use Tauri invoke - stricter detection for real tracing
-      const isTauri =
-        typeof window !== "undefined" &&
-        (window as any).__TAURI__ &&
-        typeof (window as any).__TAURI__.invoke === "function";
-      
-      if (isTauri) {
-        rawOutput = await (window as any).__TAURI__.invoke("run_traceroute", { target });
-        console.log("REAL TRACEROUTE OUTPUT START", rawOutput.slice(0, 200));
-      } else {
-        // Force error - no fallback for real tracing
-        throw new Error("Tauri context not available - cannot perform real traceroute. Run as desktop app.");
+      if (!isTauri()) {
+        throw new Error("Not running in Tauri. Run the desktop app.");
       }
+      
+      rawOutput = await invoke<string>("run_traceroute", { target });
+      console.log("REAL TRACEROUTE OUTPUT START", rawOutput.slice(0, 200));
       
       // Parse the output to extract hop data
       const hops = parseTracerouteOutput(rawOutput, target);
