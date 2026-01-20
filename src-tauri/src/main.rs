@@ -481,10 +481,7 @@ fn main() {
             log_debug,
             log_info,
             log_warn,
-            log_error,
-            download_file,
-            cancel_download,
-            open_file_in_folder
+            log_error
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
