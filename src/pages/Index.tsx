@@ -6,11 +6,11 @@ import WorldMap from "@/components/WorldMap";
 import HopsTable from "@/components/HopsTable";
 import TerminalOutput from "@/components/TerminalOutput";
 import StatusBar from "@/components/StatusBar";
-import { useTraceSimulation } from "@/hooks/useTraceSimulation";
+import { useTrace } from "@/hooks/use-trace";
 
 const Index = () => {
   const [target, setTarget] = useState("");
-  const { isTracing, result, currentHops, startTrace } = useTraceSimulation();
+  const { isTracing, result, currentHops, startTrace } = useTrace();
 
   const handleTrace = (newTarget: string) => {
     setTarget(newTarget);

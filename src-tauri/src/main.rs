@@ -3,9 +3,12 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::process::Child;
+use tokio::process::Command;
 use tokio::sync::Mutex;
 use tracing::{info, error};
+use tokio::io::{AsyncBufReadExt, BufReader};
+use std::process::Stdio;
+use futures::stream::StreamExt;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct GeoLocation {
@@ -55,8 +58,15 @@ pub struct TraceOptions {
     pub resolve_dns: Option<bool>,
 }
 
+use tokio_util::sync::CancellationToken;
+
+struct RunningTrace {
+    cancel_token: CancellationToken,
+    handle: tokio::task::JoinHandle<Result<TraceResult, String>>,
+}
+
 struct AppState {
-    running_processes: Arc<Mutex<HashMap<String, Child>>>,
+    running_traces: Arc<Mutex<HashMap<String, RunningTrace>>>,
 }
 
 #[tauri::command]
@@ -75,43 +85,51 @@ async fn run_trace(
     // Prepare command based on OS
     let (cmd, args) = prepare_trace_command(&target, &options)?;
 
-    // Spawn the traceroute process
-    let mut child = tokio::process::Command::new(&cmd)
-        .args(&args)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to start traceroute: {}", e))?;
-
-    // Store process in state for potential cancellation
+    // Create a unique ID for this trace
     let trace_id = uuid::Uuid::new_v4().to_string();
-    {
-        let mut processes = state.running_processes.lock().await;
-        processes.insert(trace_id.clone(), child);
-    }
-
-    // Read output line by line
-    let output = {
-        let processes = state.running_processes.lock().await;
-        let child_ref = processes.get(&trace_id).unwrap();
-        
-        // We need to read from the stdout of the child process
-        // For simplicity in this implementation, we'll wait for completion
-        drop(processes);
-        
-        // Wait for the process to complete and get output
-        let output_result = child.wait_with_output().await
-            .map_err(|e| format!("Failed to read traceroute output: {}", e))?;
-        
-        // Remove from running processes after completion
-        {
-            let mut processes = state.running_processes.lock().await;
-            processes.remove(&trace_id);
+    
+    // Create cancellation token
+    let cancel_token = CancellationToken::new();
+    
+    // Execute the traceroute command in a cancellable task
+    let trace_future = execute_trace_with_cancel(cmd, args, cancel_token.clone());
+    let handle = tokio::spawn(async move {
+        tokio::select! {
+            result = trace_future => result,
+            _ = cancel_token.cancelled() => Err("Trace cancelled by user".to_string()),
         }
+    });
+    
+    // Store the running trace
+    {
+        let mut running_traces = state.running_traces.lock().await;
+        running_traces.insert(
+            trace_id.clone(), 
+            RunningTrace { cancel_token, handle }
+        );
+    }
+    
+    // Wait for completion
+    let result = {
+        let running_traces = state.running_traces.lock().await;
+        let running_trace = running_traces.get(&trace_id)
+            .ok_or_else(|| "Trace not found in running traces".to_string())?;
+        let handle = running_trace.handle.abort_handle();
+        drop(running_traces);
         
-        String::from_utf8(output_result.stdout)
-            .map_err(|_| "Invalid UTF-8 in traceroute output".to_string())?
+        match handle.await {
+            Ok(res) => res?,
+            Err(_) => return Err("Trace task was cancelled".to_string()),
+        }
     };
+    
+    // Clean up from running traces
+    {
+        let mut running_traces = state.running_traces.lock().await;
+        running_traces.remove(&trace_id);
+    }
+    
+    return Ok(result);
 
     // Parse the output
     let hops = parse_traceroute_output(&output, &target)?;
@@ -128,6 +146,35 @@ async fn run_trace(
         start_time,
         end_time,
     })
+}
+
+async fn execute_trace_command(cmd: String, args: Vec<String>) -> Result<String, String> {
+    let output = Command::new(&cmd)
+        .args(&args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute {}: {}", cmd, e))?;
+
+    let stdout = String::from_utf8(output.stdout)
+        .map_err(|_| "Invalid UTF-8 in stdout".to_string())?;
+    let stderr = String::from_utf8(output.stderr)
+        .map_err(|_| "Invalid UTF-8 in stderr".to_string())?;
+
+    if !output.status.success() {
+        return Err(format!("{} failed: {}", cmd, stderr));
+    }
+
+    Ok(stdout)
+}
+
+#[tauri::command]
+async fn stop_trace(trace_id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    // For now, we don't implement stopping since we wait for completion
+    // In a real implementation, you'd need to store the spawned task handle
+    // and cancel it here
+    Ok(())
 }
 
 #[tauri::command]
