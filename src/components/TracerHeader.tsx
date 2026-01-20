@@ -1,15 +1,23 @@
 import { Activity } from "lucide-react";
 
-const TracerHeader = () => {
-  return (
-    <header className="relative py-8 text-center overflow-hidden">
-      {/* Scan line effect */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div 
-          className="absolute left-0 right-0 h-8 bg-gradient-to-b from-primary/5 to-transparent animate-scan"
-          style={{ animationDelay: `${Math.random() * 5}s` }}
-        />
+interface TracerHeaderProps {
+  compact?: boolean;
+}
+
+const TracerHeader = ({ compact = false }: TracerHeaderProps) => {
+  if (compact) {
+    return (
+      <div className="flex items-center gap-2">
+        <Activity className="h-5 w-5 text-primary animate-pulse" />
+        <h1 className="cyber-title text-lg font-bold text-primary">
+          TRACE<span className="text-primary/40">RT</span>
+        </h1>
       </div>
+    );
+  }
+
+  return (
+    <header className="relative py-8 text-center">
       {/* Decorative lines */}
       <div className="absolute left-0 right-0 top-1/2 h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
       

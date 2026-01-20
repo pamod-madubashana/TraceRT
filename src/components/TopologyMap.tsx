@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 interface TopologyMapProps {
   hops: HopData[];
   target: string;
+  compact?: boolean;
 }
 
 interface Particle {
@@ -13,7 +14,7 @@ interface Particle {
   lineIndex: number;
 }
 
-const TopologyMap = ({ hops, target }: TopologyMapProps) => {
+const TopologyMap = ({ hops, target, compact = true }: TopologyMapProps) => {
   const [particles, setParticles] = useState<Particle[]>([]);
 
   // Generate particles for animation
@@ -61,31 +62,24 @@ const TopologyMap = ({ hops, target }: TopologyMapProps) => {
   const nodeCount = displayHops.length + 2; // Source + hops + destination
 
   return (
-    <div className="cyber-panel p-6 glow-border min-h-[280px] relative overflow-hidden">
-      {/* Scan line effect */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden rounded">
-        <div 
-          className="absolute left-0 right-0 h-8 bg-gradient-to-b from-primary/5 to-transparent animate-scan"
-          style={{ animationDelay: `${Math.random() * 5}s` }}
-        />
-      </div>
-      <div className="flex items-center gap-2 mb-6">
-        <div className="w-2 h-2 rounded-full bg-accent pulse-glow" />
-        <span className="font-display text-xs tracking-wider text-primary uppercase">
+    <div className="cyber-panel p-3 glow-border">
+      <div className="flex items-center gap-2 mb-2">
+        <div className="w-1.5 h-1.5 rounded-full bg-accent pulse-glow" />
+        <span className="font-display text-[10px] tracking-wider text-primary uppercase">
           Network Topology Map
         </span>
       </div>
 
       {hops.length === 0 ? (
-        <div className="flex items-center justify-center h-48 text-muted-foreground">
-          <span className="font-mono text-sm">Awaiting trace data...</span>
+        <div className="flex items-center justify-center h-16 text-muted-foreground">
+          <span className="font-mono text-xs">Awaiting trace data...</span>
         </div>
       ) : (
         <div className="relative">
           {/* SVG for particles */}
           <svg 
             className="absolute inset-0 w-full h-full pointer-events-none z-10"
-            style={{ height: 120 }}
+            style={{ height: 70 }}
             preserveAspectRatio="none"
           >
             <defs>
@@ -168,25 +162,24 @@ const TopologyMap = ({ hops, target }: TopologyMapProps) => {
           </svg>
 
           {/* Nodes */}
-          <div className="relative z-20 flex items-center justify-between" style={{ minHeight: 120 }}>
+          <div className="relative z-20 flex items-center justify-between" style={{ minHeight: 70 }}>
             {/* Source node */}
-            <div className="flex flex-col items-center gap-2">
-              <div className="w-14 h-14 rounded-full bg-card border-2 border-accent flex items-center justify-center pulse-glow relative">
-                <span className="font-display text-xs text-accent">SRC</span>
-                <div className="absolute inset-0 rounded-full border-2 border-accent/30 animate-ping" />
+            <div className="flex flex-col items-center gap-1">
+              <div className="w-8 h-8 rounded-full bg-card border-2 border-accent flex items-center justify-center pulse-glow relative">
+                <span className="font-display text-[8px] text-accent">SRC</span>
               </div>
-              <span className="text-xs text-muted-foreground font-mono">Local</span>
+              <span className="text-[8px] text-muted-foreground font-mono">Local</span>
             </div>
 
             {/* Hop nodes */}
             {displayHops.map((hop, index) => (
               <div 
                 key={hop.hop} 
-                className="flex flex-col items-center gap-2 fade-in-up"
+                className="flex flex-col items-center gap-1 fade-in-up"
                 style={{ animationDelay: `${index * 0.1}s` }}
               >
                 <div 
-                  className={`relative w-12 h-12 rounded-full bg-card border-2 flex items-center justify-center transition-all duration-300 ${
+                  className={`relative w-7 h-7 rounded-full bg-card border flex items-center justify-center transition-all duration-300 ${
                     hop.status === "success" 
                       ? "border-primary shadow-glow-sm" 
                       : hop.status === "timeout"
@@ -194,58 +187,20 @@ const TopologyMap = ({ hops, target }: TopologyMapProps) => {
                       : "border-muted"
                   }`}
                 >
-                  <span className="font-display text-xs text-primary">{hop.hop}</span>
-                  
-                  {/* Pulsing ring for active nodes */}
-                  {hop.status === "success" && (
-                    <div className="absolute inset-0 rounded-full border border-primary/50 animate-ping" style={{ animationDuration: '2s' }} />
-                  )}
-                  
-                  {/* Latency badge */}
-                  {hop.avgLatency && (
-                    <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-1.5 py-0.5 bg-background border border-primary/50 rounded text-[10px] text-primary whitespace-nowrap">
-                      {hop.avgLatency}ms
-                    </div>
-                  )}
+                  <span className="font-display text-[8px] text-primary">{hop.hop}</span>
                 </div>
-                <div className="text-center">
-                  <span className="text-[10px] text-muted-foreground font-mono max-w-16 truncate block">
-                    {hop.host || hop.ip || "* * *"}
-                  </span>
-                  {hop.geo && (
-                    <span className="text-[9px] text-primary/70 block">
-                      {hop.geo.city}, {hop.geo.countryCode}
-                    </span>
-                  )}
-                </div>
+                <span className="text-[8px] text-muted-foreground font-mono max-w-12 truncate">
+                  {hop.avgLatency ? `${hop.avgLatency}ms` : hop.ip?.split('.').slice(-1)[0] || "*"}
+                </span>
               </div>
             ))}
 
             {/* Destination node */}
-            <div className="flex flex-col items-center gap-2">
-              <div className="w-14 h-14 rounded-full bg-card border-2 border-secondary flex items-center justify-center pulse-glow relative">
-                <span className="font-display text-xs text-secondary">DST</span>
-                <div className="absolute inset-0 rounded-full border-2 border-secondary/30 animate-ping" />
+            <div className="flex flex-col items-center gap-1">
+              <div className="w-8 h-8 rounded-full bg-card border-2 border-secondary flex items-center justify-center pulse-glow relative">
+                <span className="font-display text-[8px] text-secondary">DST</span>
               </div>
-              <span className="text-xs text-muted-foreground font-mono max-w-20 truncate">{target}</span>
-            </div>
-          </div>
-
-          {/* Legend */}
-          <div className="mt-8 pt-4 border-t border-border/50 flex items-center justify-center gap-6 text-xs">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full border-2 border-primary" />
-              <span className="text-muted-foreground">Active Hop</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full border-2 border-destructive/50" />
-              <span className="text-muted-foreground">Timeout</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="relative w-6 h-0.5 bg-primary/30 overflow-hidden">
-                <div className="absolute w-2 h-full bg-primary rounded-full animate-slide-particle" />
-              </div>
-              <span className="text-muted-foreground">Data Flow</span>
+              <span className="text-[8px] text-muted-foreground font-mono max-w-14 truncate">{target}</span>
             </div>
           </div>
         </div>

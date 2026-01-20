@@ -10,14 +10,7 @@ const StatusBar = ({ isTracing, target, hopCount }: StatusBarProps) => {
   const currentTime = new Date().toLocaleTimeString();
 
   return (
-    <div className="cyber-panel px-4 py-2 glow-border relative overflow-hidden">
-      {/* Scan line effect */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden rounded">
-        <div 
-          className="absolute left-0 right-0 h-8 bg-gradient-to-b from-primary/5 to-transparent animate-scan"
-          style={{ animationDelay: `${Math.random() * 5}s` }}
-        />
-      </div>
+    <div className="cyber-panel px-4 py-2 glow-border">
       <div className="flex items-center justify-between text-xs">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">

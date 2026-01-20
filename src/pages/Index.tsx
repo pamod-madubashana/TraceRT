@@ -6,11 +6,11 @@ import WorldMap from "@/components/WorldMap";
 import HopsTable from "@/components/HopsTable";
 import TerminalOutput from "@/components/TerminalOutput";
 import StatusBar from "@/components/StatusBar";
-import { useTrace } from "@/hooks/use-trace";
+import { useTraceSimulation } from "@/hooks/useTraceSimulation";
 
 const Index = () => {
   const [target, setTarget] = useState("");
-  const { isTracing, result, currentHops, startTrace } = useTrace();
+  const { isTracing, result, currentHops, startTrace } = useTraceSimulation();
 
   const handleTrace = (newTarget: string) => {
     setTarget(newTarget);
@@ -18,46 +18,52 @@ const Index = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background grid-pattern">
-      <div className="container max-w-7xl mx-auto px-4 py-6 space-y-6">
-        {/* Header */}
-        <TracerHeader />
-
-        {/* Status bar */}
-        <StatusBar 
-          isTracing={isTracing} 
-          target={target} 
-          hopCount={currentHops.length} 
-        />
-
-        {/* Input section */}
-        <InputPanel onTrace={handleTrace} isTracing={isTracing} />
-
-        {/* Main content */}
-        <div className="space-y-6">
-          {/* Topology visualization */}
-          <TopologyMap hops={currentHops} target={target} />
-
-          {/* World Map */}
-          <WorldMap hops={currentHops} />
-
-          {/* Data grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Hops table */}
-            <HopsTable hops={currentHops} />
-
-            {/* Terminal output */}
-            <TerminalOutput 
-              output={result?.rawOutput || ""} 
+    <div className="h-screen bg-background grid-pattern overflow-hidden flex flex-col">
+      <div className="container max-w-7xl mx-auto px-3 py-2 flex flex-col flex-1 gap-2 overflow-hidden">
+        {/* Header + Status + Input row */}
+        <div className="flex items-center gap-4 flex-wrap">
+          <TracerHeader compact />
+          <div className="flex-1">
+            <StatusBar 
+              isTracing={isTracing} 
               target={target} 
+              hopCount={currentHops.length} 
             />
+          </div>
+          <div className="flex-1 min-w-[300px]">
+            <InputPanel onTrace={handleTrace} isTracing={isTracing} compact />
+          </div>
+        </div>
+
+        {/* Main content - Two column layout */}
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-2 overflow-hidden min-h-0">
+          {/* Left column: Topology + Hops Table */}
+          <div className="flex flex-col gap-2 overflow-hidden">
+            <TopologyMap hops={currentHops} target={target} />
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <HopsTable hops={currentHops} compact />
+            </div>
+          </div>
+
+          {/* Right column: World Map + Terminal */}
+          <div className="flex flex-col gap-2 overflow-hidden">
+            <div className="flex-1 min-h-0">
+              <WorldMap hops={currentHops} compact />
+            </div>
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <TerminalOutput 
+                output={result?.rawOutput || ""} 
+                target={target}
+                compact
+              />
+            </div>
           </div>
         </div>
 
         {/* Footer */}
-        <footer className="text-center py-4 border-t border-border/30">
-          <p className="text-xs text-muted-foreground font-mono">
-            TRACERT v2.0 // Network Path Analysis Terminal // Powered by Cyber Systems
+        <footer className="text-center py-1 border-t border-border/30">
+          <p className="text-[10px] text-muted-foreground font-mono">
+            TRACERT v2.0 // Network Path Analysis Terminal
           </p>
         </footer>
       </div>

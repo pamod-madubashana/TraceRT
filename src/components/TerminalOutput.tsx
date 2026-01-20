@@ -4,9 +4,10 @@ import { toast } from "sonner";
 interface TerminalOutputProps {
   output: string;
   target: string;
+  compact?: boolean;
 }
 
-const TerminalOutput = ({ output, target }: TerminalOutputProps) => {
+const TerminalOutput = ({ output, target, compact = false }: TerminalOutputProps) => {
   const handleCopy = () => {
     navigator.clipboard.writeText(output);
     toast.success("Copied to clipboard", {
@@ -28,41 +29,38 @@ const TerminalOutput = ({ output, target }: TerminalOutputProps) => {
   };
 
   return (
-    <div className="cyber-panel p-4 glow-border">
-      <div className="flex items-center justify-between mb-4">
+    <div className="cyber-panel p-2 glow-border h-full flex flex-col">
+      <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <ChevronRight className="w-4 h-4 text-primary" />
-          <span className="font-display text-xs tracking-wider text-primary uppercase">
-            Raw Terminal Output
+          <ChevronRight className="w-3 h-3 text-primary" />
+          <span className="font-display text-[10px] tracking-wider text-primary uppercase">
+            Terminal Output
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <button
             onClick={handleCopy}
             disabled={!output}
-            className="cyber-button !px-3 !py-1 text-xs flex items-center gap-1.5 disabled:opacity-30"
+            className="cyber-button !px-2 !py-0.5 text-[10px] flex items-center gap-1 disabled:opacity-30"
           >
-            <Copy className="w-3 h-3" />
+            <Copy className="w-2.5 h-2.5" />
             Copy
           </button>
           <button
             onClick={handleExport}
             disabled={!output}
-            className="cyber-button !px-3 !py-1 text-xs flex items-center gap-1.5 disabled:opacity-30"
+            className="cyber-button !px-2 !py-0.5 text-[10px] flex items-center gap-1 disabled:opacity-30"
           >
-            <Download className="w-3 h-3" />
+            <Download className="w-2.5 h-2.5" />
             Export
           </button>
         </div>
       </div>
 
-      <div className="relative bg-background/50 border border-border/50 rounded p-4 min-h-[200px] max-h-[300px] overflow-auto">
+      <div className="relative bg-background/50 border border-border/50 rounded p-2 flex-1 overflow-auto">
         {/* Scan line effect */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden rounded">
-          <div 
-            className="absolute left-0 right-0 h-8 bg-gradient-to-b from-primary/5 to-transparent animate-scan"
-            style={{ animationDelay: `${Math.random() * 5}s` }}
-          />
+          <div className="absolute left-0 right-0 h-8 bg-gradient-to-b from-primary/5 to-transparent animate-scan" />
         </div>
         
         {output ? (

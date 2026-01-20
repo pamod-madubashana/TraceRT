@@ -3,35 +3,29 @@ import { ChevronRight, Clock, Server, MapPin } from "lucide-react";
 
 interface HopsTableProps {
   hops: HopData[];
+  compact?: boolean;
 }
 
-const HopsTable = ({ hops }: HopsTableProps) => {
+const HopsTable = ({ hops, compact = false }: HopsTableProps) => {
   return (
-    <div className="cyber-panel p-4 glow-border relative overflow-hidden">
-      {/* Scan line effect */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden rounded">
-        <div 
-          className="absolute left-0 right-0 h-8 bg-gradient-to-b from-primary/5 to-transparent animate-scan"
-          style={{ animationDelay: `${Math.random() * 5}s` }}
-        />
-      </div>
-      <div className="flex items-center gap-2 mb-4">
-        <ChevronRight className="w-4 h-4 text-primary" />
-        <span className="font-display text-xs tracking-wider text-primary uppercase">
-          Parsed Hops Data
+    <div className="cyber-panel p-2 glow-border h-full flex flex-col">
+      <div className="flex items-center gap-2 mb-2">
+        <ChevronRight className="w-3 h-3 text-primary" />
+        <span className="font-display text-[10px] tracking-wider text-primary uppercase">
+          Hops Data
         </span>
-        <span className="ml-auto text-xs text-muted-foreground font-mono">
-          {hops.length} nodes detected
+        <span className="ml-auto text-[10px] text-muted-foreground font-mono">
+          {hops.length} nodes
         </span>
       </div>
 
       {hops.length === 0 ? (
-        <div className="py-8 text-center text-muted-foreground text-sm">
+        <div className="py-4 text-center text-muted-foreground text-xs flex-1 flex items-center justify-center">
           No hop data available
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="cyber-table">
+        <div className="overflow-auto flex-1">
+          <table className="cyber-table text-[10px]">
             <thead>
               <tr>
                 <th className="w-12">
