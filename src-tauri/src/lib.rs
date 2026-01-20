@@ -4,6 +4,12 @@ use std::thread;
 use std::sync::mpsc;
 use std::time::Duration;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -36,10 +42,15 @@ fn run_traceroute(target: String) -> Result<String, String> {
     let handle = thread::spawn(move || {
         let result = match std::env::consts::OS {
             "windows" => {
-                // Windows: tracert -d <target>
-                Command::new("tracert")
-                    .args(["-d", &target_clone])
-                    .output()
+                let mut cmd = Command::new("tracert");
+                cmd.args(["-d", &target_clone]);
+
+                #[cfg(windows)]
+                {
+                    cmd.creation_flags(CREATE_NO_WINDOW);
+                }
+
+                cmd.output()
             }
             _ => {
                 // Unix-like systems: try traceroute first, fallback to tracepath
