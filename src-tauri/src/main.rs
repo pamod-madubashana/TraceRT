@@ -210,7 +210,7 @@ async fn geo_lookup(ip: String) -> Result<GeoResult, String> {
     let db = GEO_DB.as_ref().ok_or_else(|| "Geolocation database not loaded".to_string())?;
     let addr: std::net::IpAddr = ip.parse().map_err(|_| "Invalid IP address".to_string())?;
 
-    match db.lookup::<maxminddb::geoip2::City>(addr) {
+    match db.lookup(addr) {
         Ok(city) => {
             let lat = city.location.as_ref().and_then(|l| l.latitude);
             let lng = city.location.as_ref().and_then(|l| l.longitude);
@@ -230,7 +230,7 @@ async fn geo_lookup(ip: String) -> Result<GeoResult, String> {
             let country_code = city.country
                 .as_ref()
                 .and_then(|c| c.iso_code.as_ref())
-                .map(|s| s.to_string()); // Convert &str to String
+                .map(|s| s.to_string());
 
             Ok(GeoResult {
                 ip,
@@ -1114,7 +1114,7 @@ async fn geo_lookup_inner(ip: String) -> Result<GeoResult, String> {
         "Invalid IP address".to_string()
     })?;
 
-    match db.lookup::<maxminddb::geoip2::City>(addr) {
+    match db.lookup(addr) {
         Ok(city) => {
             let lat = city.location.as_ref().and_then(|l| l.latitude);
             let lng = city.location.as_ref().and_then(|l| l.longitude);
