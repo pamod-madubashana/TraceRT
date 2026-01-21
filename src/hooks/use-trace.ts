@@ -280,6 +280,17 @@ function parseTracerouteLine(line: string): HopData | undefined {
     }
   }
   
+  // If we couldn't find a valid IP, try to find any part that looks like an IP
+  if (!ipPart) {
+    for (let j = i; j < parts.length; j++) {
+      const part = parts[j];
+      if (part.includes('.') && /\d+\.\d+\.\d+\.\d+/.test(part)) {
+        ipPart = part;
+        break;
+      }
+    }
+  }
+  
   // Pad latencies to exactly 3 values if needed
   while (latencies.length < 3) {
     latencies.push(undefined);
@@ -304,7 +315,7 @@ function parseTracerouteLine(line: string): HopData | undefined {
 
 // Helper function to validate IP address format
 function isValidIPFormat(str: string): boolean {
-  // Check if it's a valid IPv4 format (basic validation)
+  // Check if it's a valid IPv4 format
   const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}$/;
   if (ipv4Pattern.test(str)) {
     // Further validate each octet is between 0-255
@@ -314,8 +325,7 @@ function isValidIPFormat(str: string): boolean {
       return num >= 0 && num <= 255;
     });
   }
-  // For now, just check if it has multiple dots (IPv4) or colons (IPv6)
-  return str.split('.').length > 2 || str.includes(':');
+  return false;
 }
 
 // Export the original simulation hook for explicit usage
