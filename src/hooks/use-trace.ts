@@ -77,19 +77,19 @@ export const useTrace = () => {
   
   // Log when isTracing changes
   useEffect(() => {
-    logger.info(' [use-trace] isTracing state changed to:', isTracing);
+    logger.info('[use-trace] isTracing state changed to:', isTracing);
   }, [isTracing]);
   
   // Handle completion event from backend
   useEffect(() => {
-    logger.info(' [use-trace] Completion effect triggered, completion:', completion);
+    logger.info('[use-trace] Completion effect triggered, completion:', completion);
     if (completion && !useSimulation) {
       logger.info('Received trace completion event, updating state');
-      logger.info(' [use-trace] Processing completion event for trace_id=', completion.trace_id);
+      logger.info('[use-trace] Processing completion event for trace_id=', completion.trace_id);
       setResult(completion.result);
       // Update currentHops with the final result when trace completes
       setCurrentHops(completion.result.hops);
-      logger.info(' [use-trace] Setting isTracing to false');
+      logger.info('[use-trace] Setting isTracing to false');
       setIsTracing(false);
       setActiveTraceId(null);
       resetLines();
