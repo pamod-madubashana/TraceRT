@@ -259,6 +259,7 @@ async fn run_trace(
     }
     
     tracing::debug!("[Rust] [TRACE] About to return trace ID: {}", trace_id);
+    tracing::debug!("[Rust] [TRACE] Trace ID length: {}", trace_id.len());
     // Return the trace ID immediately so UI can start listening
     let result = Ok(trace_id);
     tracing::debug!("[Rust] [TRACE] Returned trace ID result");
