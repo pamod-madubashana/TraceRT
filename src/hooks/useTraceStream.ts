@@ -1,6 +1,7 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useEffect, useRef, useState } from "react";
 import { TraceResult } from "@/types/trace";
+import { logger } from "@/lib/logger";
 
 export type TraceLineEvent = {
   trace_id: string;
@@ -35,47 +36,56 @@ export function useTraceStream(activeTraceId: string | null) {
       window.__TAURI_INTERNALS__ !== undefined;
 
     if (!isTauriAvailable) {
-      console.warn('[useTraceStream] Tauri not available, skipping event listener setup');
+      logger.warn('[useTraceStream] Tauri not available, skipping event listener setup');
       return;
     }
 
-    console.log('[React] trace:complete listener installed');
+    logger.info('[React] Installing trace:complete listener...');
     let unlistenLine: UnlistenFn | null = null;
     let unlistenComplete: UnlistenFn | null = null;
 
     (async () => {
       try {
         // Listen for trace line events
-        unlistenLine = await listen<TraceLineEvent>("trace:line", (event) => {
-          // ignore events from old traces
-          if (!activeIdRef.current) return;
-          if (event.payload.trace_id !== activeIdRef.current) return;
+        try {
+          unlistenLine = await listen<TraceLineEvent>("trace:line", (event) => {
+            // ignore events from old traces
+            if (!activeIdRef.current) return;
+            if (event.payload.trace_id !== activeIdRef.current) return;
 
-          setLines((prev) => [...prev, event.payload]);
-        });
+            setLines((prev) => [...prev, event.payload]);
+          });
+        } catch (error) {
+          logger.error(`[React] listen(trace:line) failed: ${error}`);
+        }
         
         // Listen for trace completion events
-        unlistenComplete = await listen<TraceCompleteEvent>("trace:complete", (event) => {
-          console.log(`[React] trace:complete received trace_id=${event.payload.trace_id}`);
-          
-          // For completion events, check both current and last expected trace ID
-          // This handles potential race conditions where activeTraceId gets reset before
-          // the completion event is processed
-          if (!activeIdRef.current && !lastExpectedTraceIdRef.current) {
-            console.log('[React] [useTraceStream] Rejecting completion event - no active trace ID');
-            console.log(`[React] [useTraceStream] activeIdRef.current: ${activeIdRef.current}`);
-            console.log(`[React] [useTraceStream] lastExpectedTraceIdRef.current: ${lastExpectedTraceIdRef.current}`);
-            return;
-          }
-          if (event.payload.trace_id !== activeIdRef.current && 
-              event.payload.trace_id !== lastExpectedTraceIdRef.current) {
-            console.log(`[React] [useTraceStream] Rejecting completion event - trace ID mismatch, eventTraceId: ${event.payload.trace_id}, activeId: ${activeIdRef.current}, lastExpectedId: ${lastExpectedTraceIdRef.current}`);
-            return;
-          }
+        try {
+          unlistenComplete = await listen<TraceCompleteEvent>("trace:complete", (event) => {
+            logger.info(`[React] trace:complete received trace_id=${event.payload.trace_id}`);
+            
+            // For completion events, check both current and last expected trace ID
+            // This handles potential race conditions where activeTraceId gets reset before
+            // the completion event is processed
+            if (!activeIdRef.current && !lastExpectedTraceIdRef.current) {
+              logger.info('[React] [useTraceStream] Rejecting completion event - no active trace ID');
+              logger.info(`[React] [useTraceStream] activeIdRef.current: ${activeIdRef.current}`);
+              logger.info(`[React] [useTraceStream] lastExpectedTraceIdRef.current: ${lastExpectedTraceIdRef.current}`);
+              return;
+            }
+            if (event.payload.trace_id !== activeIdRef.current && 
+                event.payload.trace_id !== lastExpectedTraceIdRef.current) {
+              logger.info(`[React] [useTraceStream] Rejecting completion event - trace ID mismatch, eventTraceId: ${event.payload.trace_id}, activeId: ${activeIdRef.current}, lastExpectedId: ${lastExpectedTraceIdRef.current}`);
+              return;
+            }
 
-          console.log(`[React] [useTraceStream] Accepting completion event for trace: ${event.payload.trace_id}`);
-          setCompletion(event.payload);
-        });
+            logger.info(`[React] [useTraceStream] Accepting completion event for trace: ${event.payload.trace_id}`);
+            setCompletion(event.payload);
+          });
+          logger.info('[React] trace:complete listener installed');
+        } catch (error) {
+          logger.error(`[React] listen(trace:complete) failed: ${error}`);
+        }
         
         // Store both unlisten functions for proper cleanup
         unlistenRef.current = () => {
@@ -87,7 +97,7 @@ export function useTraceStream(activeTraceId: string | null) {
           }
         };
       } catch (error) {
-        console.error('[useTraceStream] Failed to setup event listeners:', error);
+        logger.error('[useTraceStream] Failed to setup event listeners:', error);
       }
     })();
 
