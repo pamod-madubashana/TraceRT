@@ -47,6 +47,7 @@ export const useTrace = () => {
   
   // Process streaming lines to update hops in real-time when not using simulation
   useEffect(() => {
+    console.log('[React] [use-trace] Processing streaming lines, isTracing:', isTracing, 'lines count:', lines.length);
     if (useSimulation || !lines || lines.length === 0 || !isTracing) return;
     
     // Parse the streaming lines to update hops in real-time
@@ -74,6 +75,11 @@ export const useTrace = () => {
   // Use real-time hops during tracing, final result hops after completion
   const effectiveHops = useSimulation ? simHops : (isTracing ? currentHops : (result ? result.hops : currentHops));
   
+  // Log when isTracing changes
+  useEffect(() => {
+    console.log('[React] [use-trace] isTracing state changed to:', isTracing);
+  }, [isTracing]);
+  
   // Handle completion event from backend
   useEffect(() => {
     console.log('[React] [use-trace] Completion effect triggered, completion:', completion);
@@ -83,6 +89,7 @@ export const useTrace = () => {
       setResult(completion.result);
       // Update currentHops with the final result when trace completes
       setCurrentHops(completion.result.hops);
+      console.log('[React] [use-trace] Setting isTracing to false');
       setIsTracing(false);
       setActiveTraceId(null);
       resetLines();

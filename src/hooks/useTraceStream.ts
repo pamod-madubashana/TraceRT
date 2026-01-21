@@ -61,6 +61,8 @@ export function useTraceStream(activeTraceId: string | null) {
           // the completion event is processed
           if (!activeIdRef.current && !lastExpectedTraceIdRef.current) {
             console.log('[React] [useTraceStream] Rejecting completion event - no active trace ID');
+            console.log('[React] [useTraceStream] activeIdRef.current:', activeIdRef.current);
+            console.log('[React] [useTraceStream] lastExpectedTraceIdRef.current:', lastExpectedTraceIdRef.current);
             return;
           }
           if (event.payload.trace_id !== activeIdRef.current && 
