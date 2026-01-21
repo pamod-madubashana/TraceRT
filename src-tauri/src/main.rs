@@ -1,7 +1,26 @@
 #![windows_subsystem = "console"]
 // #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use tauri::{Emitter, Listener};
 use serde::{Deserialize, Serialize};
+use maxminddb::Reader;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::path::Path;
+use directories::BaseDirs;
+use sysinfo::System;
+use tokio::process::Command;
+use tokio::io::{BufReader, AsyncBufReadExt};
+use tokio::sync::Notify;
+use tokio_util::sync::CancellationToken;
+use tokio::fs;
+use tracing::{info, debug, warn};
+use tracing_subscriber::{self, EnvFilter, fmt, Layer};
+use tracing_appender::rolling::RollingFileAppender;
+use once_cell::sync::Lazy;
+use std::process::Stdio;
+use std::time::Duration;
 
 // Define the structure for the City database
 #[derive(Deserialize)]
@@ -71,12 +90,12 @@ async fn geo_lookup(ip: String) -> Result<GeoResult, String> {
             let city_name = city_response.city
                 .as_ref()
                 .and_then(|c| c.names.as_ref())
-                .and_then(|n| n.get("en").cloned());
+                .and_then(|n: &std::collections::HashMap<String, String>| n.get("en").cloned())
 
             let country_name = city_response.country
                 .as_ref()
                 .and_then(|c| c.names.as_ref())
-                .and_then(|n| n.get("en").cloned());
+                .and_then(|n: &std::collections::HashMap<String, String>| n.get("en").cloned())
 
             let country_code = city_response.country
                 .as_ref()
@@ -186,7 +205,7 @@ static SINGLE_INSTANCE_ACTIVE: AtomicBool = AtomicBool::new(false);
 fn is_process_running(pid: u32) -> bool {
     let mut system = System::new();
     system.refresh_processes();
-    system.processes().values().any(|process| process.pid().as_u32() == pid)
+    system.processes().values().any(|process: &sysinfo::Process| process.pid().as_u32() == pid)
 }
 
 // Function to create lock file and register cleanup
@@ -362,7 +381,7 @@ async fn run_trace(
         tracing::debug!("[Rust] [TRACE] Spawned task completed for trace_id: {}, result success: {}", trace_id_for_cleanup, result.is_ok());
         // Clean up the completed trace from the map after completion
         {
-            let mut running_traces = state_for_cleanup.lock().await;
+            let mut running_traces: tokio::sync::MutexGuard<'_, HashMap<String, RunningTrace>> = state_for_cleanup.lock().await;
             running_traces.remove(&trace_id_for_cleanup);
         }
         
@@ -372,7 +391,7 @@ async fn run_trace(
     
     // Store the running trace
     {
-        let mut running_traces = state.running_traces.lock().await;
+        let mut running_traces: tokio::sync::MutexGuard<'_, HashMap<String, RunningTrace>> = state.running_traces.lock().await;
         running_traces.insert(
             trace_id.clone(), 
             RunningTrace { cancel_notify, handle }
@@ -554,7 +573,7 @@ async fn execute_trace_with_cancel(
     tracing::info!("[Rust] [TRACE] Hops collected so far: {}, Raw output length: {}", hops.len(), raw_output.len());
     
     // Wait for the process to finish with a timeout to prevent hanging
-    let exit_status = tokio::time::timeout(
+    let exit_status: std::result::Result<std::process::ExitStatus, tokio::time::error::Elapsed> = tokio::time::timeout(
         tokio::time::Duration::from_secs(60), // 60 second timeout
         child.wait()
     ).await
@@ -600,7 +619,7 @@ async fn execute_trace_with_cancel(
 
 #[tauri::command]
 async fn stop_trace(trace_id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let mut running_traces = state.running_traces.lock().await;
+    let mut running_traces: tokio::sync::MutexGuard<'_, HashMap<String, RunningTrace>> = state.running_traces.lock().await;
     if let Some(running_trace) = running_traces.remove(&trace_id) {
         running_trace.cancel_notify.notify_one();
         
@@ -1136,12 +1155,12 @@ async fn geo_lookup_inner(ip: String) -> Result<GeoResult, String> {
             let city_name = city_response.city
                 .as_ref()
                 .and_then(|c| c.names.as_ref())
-                .and_then(|n| n.get("en").cloned());
+                .and_then(|n: &std::collections::HashMap<String, String>| n.get("en").cloned())
 
             let country_name = city_response.country
                 .as_ref()
                 .and_then(|c| c.names.as_ref())
-                .and_then(|n| n.get("en").cloned());
+                .and_then(|n: &std::collections::HashMap<String, String>| n.get("en").cloned())
 
             let country_code = city_response.country
                 .as_ref()
@@ -1177,7 +1196,7 @@ async fn geo_lookup_inner(ip: String) -> Result<GeoResult, String> {
 #[tauri::command]
 async fn download_geolite_db() -> Result<String, String> {
     let app_data_dir = BaseDirs::new()
-        .map(|dirs| dirs.data_dir().join("Local").join("tracert"))
+        .map(|dirs: directories::BaseDirs| dirs.data_dir().join("Local").join("tracert"))
         .unwrap_or(Path::new("./Local/tracert").to_path_buf());
     
     // Create directory if it doesn't exist
