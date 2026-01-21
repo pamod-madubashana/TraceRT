@@ -157,7 +157,7 @@ export const useTrace = () => {
       // Reset state on error
       setIsTracing(false);
       setActiveTraceId(null);
-      return Promise.reject(err);
+      throw err; // Throw the error to propagate it properly
     }
   }, [useSimulation, startSimTrace, resetLines]);
 

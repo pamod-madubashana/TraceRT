@@ -217,6 +217,7 @@ async fn run_trace(
 
     // Create a unique ID for this trace
     let trace_id = uuid::Uuid::new_v4().to_string();
+    tracing::debug!("[Rust] [TRACE] Generated trace_id: {}", trace_id);
     let trace_id_for_cleanup = trace_id.clone(); // Clone for the cleanup task
     
     let cancel_notify = Arc::new(Notify::new());
@@ -228,12 +229,15 @@ async fn run_trace(
     
     // Execute the traceroute command in a cancellable task
     let trace_future = execute_trace_with_cancel(app_for_task, cmd, args, cancel_for_exec, trace_id_for_task);
+    tracing::debug!("[Rust] [TRACE] About to spawn async task");
     let handle = tokio::spawn(async move {
+        tracing::debug!("[Rust] [TRACE] Inside spawned task for trace_id: {}", trace_id_for_task);
         let result = tokio::select! {
             result = trace_future => result,
             _ = cancel_for_task.notified() => Err("Trace cancelled by user".to_string()),
         };
         
+        tracing::debug!("[Rust] [TRACE] Spawned task completed for trace_id: {}, result success: {}", trace_id_for_cleanup, result.is_ok());
         // Clean up the completed trace from the map after completion
         {
             let mut running_traces = state_for_cleanup.lock().await;
@@ -242,6 +246,7 @@ async fn run_trace(
         
         result
     });
+    tracing::debug!("[Rust] [TRACE] Spawned async task handle created");
     
     // Store the running trace
     {
@@ -253,8 +258,11 @@ async fn run_trace(
         tracing::debug!("[Rust] [TRACE] Stored running trace with ID: {}", trace_id);
     }
     
+    tracing::debug!("[Rust] [TRACE] About to return trace ID: {}", trace_id);
     // Return the trace ID immediately so UI can start listening
-    Ok(trace_id)
+    let result = Ok(trace_id);
+    tracing::debug!("[Rust] [TRACE] Returned trace ID result");
+    result
 }
 
 async fn execute_trace_with_cancel(
