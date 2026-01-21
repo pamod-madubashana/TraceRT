@@ -443,8 +443,15 @@ async fn execute_trace_with_cancel(
                             
                             // Enrich this single hop with geolocation data immediately
                             if let Some(ref ip) = hop_data.ip {
-                                if let Ok(geo_data) = geo_lookup_inner(ip).await {
-                                    hop_data.geo = Some(geo_data);
+                                if let Ok(geo_result) = geo_lookup_inner(ip.to_string()).await {
+                                    // Convert GeoResult to GeoLocation
+                                    hop_data.geo = Some(GeoLocation {
+                                        lat: geo_result.lat.unwrap_or(0.0),
+                                        lng: geo_result.lng.unwrap_or(0.0),
+                                        city: geo_result.city,
+                                        country: geo_result.country,
+                                        country_code: geo_result.country_code,
+                                    });
                                 }
                             }
                             
@@ -486,8 +493,15 @@ async fn execute_trace_with_cancel(
                             
                             // Enrich this single hop with geolocation data immediately
                             if let Some(ref ip) = hop_data.ip {
-                                if let Ok(geo_data) = geo_lookup_inner(ip).await {
-                                    hop_data.geo = Some(geo_data);
+                                if let Ok(geo_result) = geo_lookup_inner(ip.to_string()).await {
+                                    // Convert GeoResult to GeoLocation
+                                    hop_data.geo = Some(GeoLocation {
+                                        lat: geo_result.lat.unwrap_or(0.0),
+                                        lng: geo_result.lng.unwrap_or(0.0),
+                                        city: geo_result.city,
+                                        country: geo_result.country,
+                                        country_code: geo_result.country_code,
+                                    });
                                 }
                             }
                             
