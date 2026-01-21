@@ -18,6 +18,16 @@ use once_cell::sync::Lazy;
 use maxminddb::Reader;
 use reqwest;
 use tokio::fs;
+use directories::BaseDirs;
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GeoLocation {
+    pub lat: f64,
+    pub lng: f64,
+    pub city: Option<String>,
+    pub country: Option<String>,
+    pub country_code: Option<String>,
+}
 
 // Static reference to the geolocation database
 static GEO_DB: Lazy<Option<Reader<Vec<u8>>>> = Lazy::new(|| {
@@ -25,14 +35,15 @@ static GEO_DB: Lazy<Option<Reader<Vec<u8>>>> = Lazy::new(|| {
     let possible_paths = [
         "resources/GeoLite2-City.mmdb",
         "GeoLite2-City.mmdb",
-        &format!("{}/Local/tracert/GeoLite2-City.mmdb", dirs::data_dir()
-            .unwrap_or(std::env::current_dir().unwrap())
+        &format!("{}/Local/tracert/GeoLite2-City.mmdb", BaseDirs::new()
+            .map(|dirs| dirs.data_dir())
+            .unwrap_or(Path::new("."))
             .to_str().unwrap()),
     ];
     
     for path in &possible_paths {
-        if std::path::Path::new(path).exists() {
-            match Reader::open_readfile(std::path::Path::new(path)) {
+        if Path::new(path).exists() {
+            match Reader::open_readfile(Path::new(path)) {
                 Ok(reader) => return Some(reader),
                 Err(e) => {
                     eprintln!("Failed to load geodb from {}: {}", path, e);
@@ -209,13 +220,13 @@ async fn geo_lookup(ip: String) -> Result<GeoResult, String> {
                 .as_ref()
                 .and_then(|c| c.names.as_ref())
                 .and_then(|n| n.get("en"))
-                .cloned();
+                .map(|s| s.to_string()); // Convert &str to String
 
             let country_name = city.country
                 .as_ref()
                 .and_then(|c| c.names.as_ref())
                 .and_then(|n| n.get("en"))
-                .cloned();
+                .map(|s| s.to_string()); // Convert &str to String
 
             let country_code = city.country.as_ref().and_then(|c| c.iso_code.clone());
 
@@ -1066,13 +1077,13 @@ async fn geo_lookup_inner(ip: String) -> Result<GeoResult, String> {
                 .as_ref()
                 .and_then(|c| c.names.as_ref())
                 .and_then(|n| n.get("en"))
-                .cloned();
+                .map(|s| s.to_string()); // Convert &str to String
 
             let country_name = city.country
                 .as_ref()
                 .and_then(|c| c.names.as_ref())
                 .and_then(|n| n.get("en"))
-                .cloned();
+                .map(|s| s.to_string()); // Convert &str to String
 
             let country_code = city.country.as_ref().and_then(|c| c.iso_code.clone());
 
@@ -1098,10 +1109,9 @@ async fn geo_lookup_inner(ip: String) -> Result<GeoResult, String> {
 
 #[tauri::command]
 async fn download_geolite_db() -> Result<String, String> {
-    let app_data_dir = dirs::data_dir()
-        .unwrap_or(std::env::current_dir().unwrap())
-        .join("Local")
-        .join("tracert");
+    let app_data_dir = BaseDirs::new()
+        .map(|dirs| dirs.data_dir().join("Local").join("tracert"))
+        .unwrap_or(Path::new("./Local/tracert").to_path_buf());
     
     // Create directory if it doesn't exist
     fs::create_dir_all(&app_data_dir).await
