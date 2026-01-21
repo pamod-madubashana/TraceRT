@@ -22,11 +22,11 @@ use tokio::fs;
 #[derive(Deserialize)]
 struct CityResponse {
     #[serde(rename = "location")]
-    location: Option<maxminddb::geoip2::structs::Location>,
+    location: Option<maxminddb::geoip2::Location>,
     #[serde(rename = "city")]
-    city: Option<maxminddb::geoip2::structs::City>,
+    city: Option<maxminddb::geoip2::City>,
     #[serde(rename = "country")]
-    country: Option<maxminddb::geoip2::structs::Country>,
+    country: Option<maxminddb::geoip2::Country>,
 }
 
 #[tauri::command]
@@ -64,12 +64,12 @@ async fn geo_lookup(ip: String) -> Result<GeoResult, String> {
             let city_name = city_response.city
                 .as_ref()
                 .and_then(|c| c.names.as_ref())
-                .and_then(|n| n.get("en"));
+                .and_then(|n: &std::collections::HashMap<String, String>| n.get("en").cloned());
 
             let country_name = city_response.country
                 .as_ref()
                 .and_then(|c| c.names.as_ref())
-                .and_then(|n| n.get("en"));
+                .and_then(|n: &std::collections::HashMap<String, String>| n.get("en").cloned());
 
             let country_code = city_response.country
                 .as_ref()
@@ -80,8 +80,8 @@ async fn geo_lookup(ip: String) -> Result<GeoResult, String> {
                 ip,
                 lat,
                 lng,
-                city: city_name.cloned(),
-                country: country_name.cloned(),
+                city: city_name,
+                country: country_name,
                 country_code,
             })
         }
@@ -179,7 +179,7 @@ static SINGLE_INSTANCE_ACTIVE: AtomicBool = AtomicBool::new(false);
 fn is_process_running(pid: u32) -> bool {
     let mut system = System::new();
     system.refresh_processes();
-    system.processes().values().any(|process: &sysinfo::Process| process.pid().as_u32().unwrap_or(0) == pid)
+    system.processes().values().any(|process: &sysinfo::Process| process.pid().as_u32() == pid)
 }
 
 // Function to create lock file and register cleanup
@@ -1127,12 +1127,12 @@ async fn geo_lookup_inner(ip: String) -> Result<GeoResult, String> {
             let city_name = city_response.city
                 .as_ref()
                 .and_then(|c| c.names.as_ref())
-                .and_then(|n| n.get("en"));
+                .and_then(|n: &std::collections::HashMap<String, String>| n.get("en").cloned());
 
             let country_name = city_response.country
                 .as_ref()
                 .and_then(|c| c.names.as_ref())
-                .and_then(|n| n.get("en"));
+                .and_then(|n: &std::collections::HashMap<String, String>| n.get("en").cloned());
 
             let country_code = city_response.country
                 .as_ref()
@@ -1146,8 +1146,8 @@ async fn geo_lookup_inner(ip: String) -> Result<GeoResult, String> {
                 ip,
                 lat,
                 lng,
-                city: city_name.cloned(),
-                country: country_name.cloned(),
+                city: city_name,
+                country: country_name,
                 country_code,
             })
         }
