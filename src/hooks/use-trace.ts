@@ -227,7 +227,7 @@ function parseTracerouteLine(line: string): HopData | undefined {
     return undefined;
   }
   
-  // Windows tracert format: "1     2 ms     2 ms     2 ms  192.168.1.1"
+  // Windows tracert format: " 1     7 ms     4 ms     2 ms  192.168.1.1"
   // Split by whitespace and filter out empty strings
   const parts = trimmedLine.split(/\s+/).filter(part => part.length > 0);
   if (parts.length < 2) return undefined;
@@ -236,31 +236,39 @@ function parseTracerouteLine(line: string): HopData | undefined {
   const hopNum = parseInt(parts[0]);
   if (isNaN(hopNum)) return undefined;
   
-  // Extract latencies (look for parts ending with "ms")
+  // Extract latencies and IP
   const latencies: (number | undefined)[] = [];
   let ipPart: string | undefined = undefined;
+  let hostPart: string | undefined = undefined;
   
-  // Process parts starting from index 1
-  for (let i = 1; i < parts.length; i++) {
-    const part = parts[i];
+  // Process parts after hop number to find latencies and IP
+  let i = 1;
+  while (i < parts.length) {
+    const currentPart = parts[i];
+    const nextPart = i + 1 < parts.length ? parts[i + 1] : null;
     
-    // Check if it's a latency value (ends with ms)
-    if (part.endsWith("ms")) {
-      const timeStr = part.slice(0, -2).replace("<", ""); // Remove "ms" and "<"
-      const time = parseFloat(timeStr);
+    // Look for the pattern: "number" followed by "ms"
+    if (nextPart === "ms" && !isNaN(parseFloat(currentPart))) {
+      // This is a latency value
+      const time = parseFloat(currentPart.replace("<", ""));
       latencies.push(isNaN(time) ? undefined : time);
-    } 
-    // Check if it's a star (timeout)
-    else if (part === "*") {
+      i += 2; // Skip both value and "ms"
+    } else if (currentPart === "*") {
+      // Timeout marker
       latencies.push(undefined);
+      i++;
+    } else if (currentPart.includes('.') || currentPart.includes(':')) {
+      // This is the IP address
+      ipPart = currentPart;
+      break; // Stop after finding IP
+    } else if (!isNaN(parseFloat(currentPart)) && !nextPart?.endsWith("ms")) {
+      // If it's just a number and not followed by "ms", it might be part of IP (rare case)
+      // Skip it for now
+      i++;
+    } else {
+      i++; // Move to next part
     }
-    // Check if it's an IP address or hostname
-    else if (part.includes('.') || part.includes(':')) {
-      // This is likely the IP/host part
-      ipPart = part;
-      // Stop processing after finding IP since everything after is usually garbage
-      break;
-    }
+    // Otherwise, skip this part
   }
   
   // Pad latencies to exactly 3 values if needed
@@ -280,7 +288,7 @@ function parseTracerouteLine(line: string): HopData | undefined {
     
   return {
     hop: hopNum,
-    host: undefined,
+    host: hostPart,
     ip: ipPart,
     latencies: latencies as (number | undefined)[],
     avgLatency,
