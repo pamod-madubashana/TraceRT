@@ -219,14 +219,23 @@ async fn run_trace(
     let cancel_for_exec = cancel_notify.clone();
     let app_for_task = app.clone();
     let trace_id_for_task = trace_id.clone();
+    let state_for_task = state.clone();  // Clone state for the task
     
     // Execute the traceroute command in a cancellable task
     let trace_future = execute_trace_with_cancel(app_for_task, cmd, args, cancel_for_exec, trace_id_for_task);
     let handle = tokio::spawn(async move {
-        tokio::select! {
+        let result = tokio::select! {
             result = trace_future => result,
             _ = cancel_for_task.notified() => Err("Trace cancelled by user".to_string()),
+        };
+        
+        // Clean up the completed trace from the map after completion
+        {
+            let mut running_traces = state_for_task.running_traces.lock().await;
+            running_traces.remove(&trace_id);
         }
+        
+        result
     });
     
     // Store the running trace
@@ -407,9 +416,13 @@ async fn execute_trace_with_cancel(
 
 #[tauri::command]
 async fn stop_trace(trace_id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let running_traces = state.running_traces.lock().await;
-    if let Some(running_trace) = running_traces.get(&trace_id) {
+    let mut running_traces = state.running_traces.lock().await;
+    if let Some(mut running_trace) = running_traces.remove(&trace_id) {
         running_trace.cancel_notify.notify_one();
+        
+        // Abort the task to ensure it stops immediately
+        running_trace.handle.abort();
+        
         Ok(())
     } else {
         Err("Trace not found".to_string())
