@@ -94,7 +94,7 @@ export const useTrace = () => {
       setActiveTraceId(null);
       resetLines();
     }
-  }, [completion, useSimulation, resetLines]);
+  }, [completion, useSimulation]); // Removed resetLines from dependencies
   
   const startTrace = useCallback(async (target: string, options: TraceOptions = {}) => {
     logger.debug(`startTrace called with target: ${target}, options:`, options);
