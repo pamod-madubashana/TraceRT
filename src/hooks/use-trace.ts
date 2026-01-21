@@ -209,50 +209,71 @@ function parseTracerouteLine(line: string): HopData | undefined {
     return undefined;
   }
   
-  // Split into parts
-  const parts = trimmedLine.split(/\s+/);
+  // Check for timeout lines first
+  if (trimmedLine.includes("Request timed out")) {
+    // Extract hop number from timeout line
+    const hopMatch = trimmedLine.match(/^(\d+)/);
+    const hopNum = hopMatch ? parseInt(hopMatch[1]) : 0;
+    if (hopNum > 0) {
+      return {
+        hop: hopNum,
+        host: undefined,
+        ip: undefined,
+        latencies: [undefined, undefined, undefined],
+        avgLatency: undefined,
+        status: "timeout"
+      };
+    }
+    return undefined;
+  }
+  
+  // Windows tracert format: "1     2 ms     2 ms     2 ms  192.168.1.1"
+  // Split by whitespace and filter out empty strings
+  const parts = trimmedLine.split(/\s+/).filter(part => part.length > 0);
   if (parts.length < 2) return undefined;
   
-  // Extract hop number
+  // Extract hop number (first part)
   const hopNum = parseInt(parts[0]);
   if (isNaN(hopNum)) return undefined;
   
-  // Check for timeout
-  if (trimmedLine.includes("Request timed out")) {
-    return {
-      hop: hopNum,
-      host: undefined,
-      ip: undefined,
-      latencies: [undefined, undefined, undefined],
-      avgLatency: undefined,
-      status: "timeout"
-    };
-  }
-  
-  // Extract latencies and IP
-  const latencies: (number | "*")[] = [];
+  // Extract latencies (look for parts ending with "ms")
+  const latencies: (number | undefined)[] = [];
   let ipPart: string | undefined = undefined;
   
-  // Look for latency values and IP address
+  // Process parts starting from index 1
   for (let i = 1; i < parts.length; i++) {
     const part = parts[i];
-      
+    
+    // Check if it's a latency value (ends with ms)
     if (part.endsWith("ms")) {
-      const timeStr = part.slice(0, -2).replace("<", "");
+      const timeStr = part.slice(0, -2).replace("<", ""); // Remove "ms" and "<"
       const time = parseFloat(timeStr);
-      latencies.push(isNaN(time) ? "*" : time);
-    } else if (part === "*") {
-      latencies.push("*");
-    } else if (!part.endsWith("ms") && part !== "ms" && part !== "*" && !isNaN(parseFloat(part))) {
-      // Likely an IP address or host
-      if (part.includes('.') || part.includes(':')) {
-        ipPart = part;
-      }
+      latencies.push(isNaN(time) ? undefined : time);
+    } 
+    // Check if it's a star (timeout)
+    else if (part === "*") {
+      latencies.push(undefined);
+    }
+    // Check if it's an IP address or hostname
+    else if (part.includes('.') || part.includes(':')) {
+      // This is likely the IP/host part
+      ipPart = part;
+      // Stop processing after finding IP since everything after is usually garbage
+      break;
     }
   }
-    
-  // Calculate average latency
-  const validLatencies = latencies.filter(lat => lat !== "*") as number[];
+  
+  // Pad latencies to exactly 3 values if needed
+  while (latencies.length < 3) {
+    latencies.push(undefined);
+  }
+  // Truncate if we have more than 3
+  if (latencies.length > 3) {
+    latencies.length = 3;
+  }
+  
+  // Calculate average latency from valid samples
+  const validLatencies = latencies.filter(lat => lat !== undefined) as number[];
   const avgLatency = validLatencies.length > 0 
     ? validLatencies.reduce((sum, val) => sum + val, 0) / validLatencies.length
     : undefined;
@@ -261,7 +282,7 @@ function parseTracerouteLine(line: string): HopData | undefined {
     hop: hopNum,
     host: undefined,
     ip: ipPart,
-    latencies,
+    latencies: latencies as (number | undefined)[],
     avgLatency,
     status: validLatencies.length > 0 ? "success" : "timeout"
   };
