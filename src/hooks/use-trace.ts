@@ -285,7 +285,7 @@ function parseTracerouteLine(line: string): HopData | undefined {
         hop: hopNum,
         host: undefined,
         ip: undefined,
-        latencies: [undefined, undefined, undefined],
+        latencies: [],
         avgLatency: undefined,
         status: "timeout",
         geo: undefined // Will be populated by the backend with real geolocation data
@@ -355,19 +355,13 @@ function parseTracerouteLine(line: string): HopData | undefined {
     }
   }
   
-  // Pad latencies to exactly 3 values if needed
-  while (latencies.length < 3) {
-    latencies.push(undefined);
-    console.debug(`[DEBUG] Padded latencies to maintain 3 elements`);
-  }
-  
   // Calculate average latency from valid samples and round to integer
   const validLatencies = latencies.filter(lat => lat !== undefined) as number[];
   const avgLatency = validLatencies.length > 0 
     ? Math.round(validLatencies.reduce((sum, val) => sum + val, 0) / validLatencies.length)
     : undefined;
     
-  console.debug(`[DEBUG] Final parsed hop: ${hopNum}, ip: "${ipPart}", latencies: [${latencies.join(', ')}], status: ${validLatencies.length > 0 ? "success" : "timeout"}`);
+  console.debug(`[DEBUG] Final parsed hop: ${hopNum}, ip: "${ipPart}", latencies: [${latencies.join(', ')}], avgLatency: ${avgLatency}, status: ${validLatencies.length > 0 ? "success" : "timeout"}`);
   
   return {
     hop: hopNum,
