@@ -40,13 +40,16 @@ fn emit_trace_line(app: &AppHandle, trace_id: &str, line_no: u32, line: &str) {
 }
 
 fn emit_trace_complete(app: &AppHandle, trace_id: &str, result: &TraceResult) {
+  tracing::info!("[TRACE] emit_trace_complete called with trace_id: {}", trace_id);
   let payload = TraceCompleteEvent {
     trace_id: trace_id.to_string(),
     result: result.clone(),
   };
 
   // emit to all windows (easy mode)
-  let _ = app.emit("trace:complete", payload);
+  tracing::info!("[TRACE] About to emit 'trace:complete' event");
+  let emit_result = app.emit("trace:complete", payload);
+  tracing::info!("[TRACE] Event emit result: {:?}", emit_result);
 }
 
 
@@ -383,8 +386,10 @@ async fn execute_trace_with_cancel(
         end_time,
     };
     
+    tracing::info!("[TRACE] About to emit completion event for trace_id: {}", trace_id);
     // Emit completion event to notify frontend
     emit_trace_complete(&app, &trace_id, &result);
+    tracing::info!("[TRACE] Completion event emitted for trace_id: {}", trace_id);
     
     Ok(result)
 }
