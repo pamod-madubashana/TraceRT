@@ -1,7 +1,7 @@
 #![windows_subsystem = "console"]
 // #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use tauri::{Emitter, Listener};
+use tauri::{Emitter};
 use serde::{Deserialize, Serialize};
 use maxminddb::Reader;
 use std::collections::HashMap;
@@ -9,18 +9,13 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::path::Path;
 use directories::BaseDirs;
-use sysinfo::System;
+use sysinfo::{System, SystemExt, ProcessExt};
 use tokio::process::Command;
 use tokio::io::{BufReader, AsyncBufReadExt};
 use tokio::sync::Notify;
-use tokio_util::sync::CancellationToken;
-use tokio::fs;
-use tracing::{info, debug, warn};
-use tracing_subscriber::{self, EnvFilter, fmt, Layer};
-use tracing_appender::rolling::RollingFileAppender;
+use tracing_subscriber::{self, Layer};
 use once_cell::sync::Lazy;
 use std::process::Stdio;
-use std::time::Duration;
 
 // Define the structure for the City database
 #[derive(Deserialize)]
@@ -82,7 +77,7 @@ async fn geo_lookup(ip: String) -> Result<GeoResult, String> {
     let db = GEO_DB.as_ref().ok_or_else(|| "Geolocation database not loaded".to_string())?;
     let addr: std::net::IpAddr = ip.parse().map_err(|_| "Invalid IP address".to_string())?;
 
-    match db.lookup::<CityResponse>(addr) {
+    match db.lookup(addr) {
         Ok(city_response) => {
             let lat = city_response.location.as_ref().and_then(|l| l.latitude);
             let lng = city_response.location.as_ref().and_then(|l| l.longitude);
@@ -90,12 +85,12 @@ async fn geo_lookup(ip: String) -> Result<GeoResult, String> {
             let city_name = city_response.city
                 .as_ref()
                 .and_then(|c| c.names.as_ref())
-                .and_then(|n: &std::collections::HashMap<String, String>| n.get("en").cloned())
+                .and_then(|n: &std::collections::HashMap<String, String>| n.get("en").cloned());
 
             let country_name = city_response.country
                 .as_ref()
                 .and_then(|c| c.names.as_ref())
-                .and_then(|n: &std::collections::HashMap<String, String>| n.get("en").cloned())
+                .and_then(|n: &std::collections::HashMap<String, String>| n.get("en").cloned());
 
             let country_code = city_response.country
                 .as_ref()
@@ -381,7 +376,7 @@ async fn run_trace(
         tracing::debug!("[Rust] [TRACE] Spawned task completed for trace_id: {}, result success: {}", trace_id_for_cleanup, result.is_ok());
         // Clean up the completed trace from the map after completion
         {
-            let mut running_traces: tokio::sync::MutexGuard<'_, HashMap<String, RunningTrace>> = state_for_cleanup.lock().await;
+            let mut running_traces: std::sync::MutexGuard<'_, HashMap<String, RunningTrace>> = state_for_cleanup.lock();
             running_traces.remove(&trace_id_for_cleanup);
         }
         
@@ -391,7 +386,7 @@ async fn run_trace(
     
     // Store the running trace
     {
-        let mut running_traces: tokio::sync::MutexGuard<'_, HashMap<String, RunningTrace>> = state.running_traces.lock().await;
+        let mut running_traces: std::sync::MutexGuard<'_, HashMap<String, RunningTrace>> = state.running_traces.lock();
         running_traces.insert(
             trace_id.clone(), 
             RunningTrace { cancel_notify, handle }
@@ -573,7 +568,7 @@ async fn execute_trace_with_cancel(
     tracing::info!("[Rust] [TRACE] Hops collected so far: {}, Raw output length: {}", hops.len(), raw_output.len());
     
     // Wait for the process to finish with a timeout to prevent hanging
-    let exit_status: std::result::Result<std::process::ExitStatus, tokio::time::error::Elapsed> = tokio::time::timeout(
+    let exit_status = tokio::time::timeout(
         tokio::time::Duration::from_secs(60), // 60 second timeout
         child.wait()
     ).await
@@ -619,7 +614,7 @@ async fn execute_trace_with_cancel(
 
 #[tauri::command]
 async fn stop_trace(trace_id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let mut running_traces: tokio::sync::MutexGuard<'_, HashMap<String, RunningTrace>> = state.running_traces.lock().await;
+    let mut running_traces: std::sync::MutexGuard<'_, HashMap<String, RunningTrace>> = state.running_traces.lock();
     if let Some(running_trace) = running_traces.remove(&trace_id) {
         running_trace.cancel_notify.notify_one();
         
@@ -1147,7 +1142,7 @@ async fn geo_lookup_inner(ip: String) -> Result<GeoResult, String> {
         "Invalid IP address".to_string()
     })?;
 
-    match db.lookup::<CityResponse>(addr) {
+    match db.lookup(addr) {
         Ok(city_response) => {
             let lat = city_response.location.as_ref().and_then(|l| l.latitude);
             let lng = city_response.location.as_ref().and_then(|l| l.longitude);
@@ -1155,12 +1150,12 @@ async fn geo_lookup_inner(ip: String) -> Result<GeoResult, String> {
             let city_name = city_response.city
                 .as_ref()
                 .and_then(|c| c.names.as_ref())
-                .and_then(|n: &std::collections::HashMap<String, String>| n.get("en").cloned())
+                .and_then(|n: &std::collections::HashMap<String, String>| n.get("en").cloned());
 
             let country_name = city_response.country
                 .as_ref()
                 .and_then(|c| c.names.as_ref())
-                .and_then(|n: &std::collections::HashMap<String, String>| n.get("en").cloned())
+                .and_then(|n: &std::collections::HashMap<String, String>| n.get("en").cloned());
 
             let country_code = city_response.country
                 .as_ref()
