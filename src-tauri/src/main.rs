@@ -1,7 +1,7 @@
 #![windows_subsystem = "console"]
 // #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use tauri::{Emitter};
+use tauri::{Emitter, AppHandle};
 use serde::{Deserialize, Serialize};
 use maxminddb::Reader;
 use std::collections::HashMap;
@@ -9,45 +9,24 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::path::Path;
 use directories::BaseDirs;
-use sysinfo::{System, SystemExt, ProcessExt};
+use sysinfo::{System, SystemExt, ProcessExt, PidExt};
 use tokio::process::Command;
 use tokio::io::{BufReader, AsyncBufReadExt};
 use tokio::sync::Notify;
 use tracing_subscriber::{self, Layer};
 use once_cell::sync::Lazy;
 use std::process::Stdio;
+use tokio::fs;
 
 // Define the structure for the City database
 #[derive(Deserialize)]
 struct CityResponse {
     #[serde(rename = "location")]
-    location: Option<Location>,
+    location: Option<maxminddb::geoip2::structs::Location>,
     #[serde(rename = "city")]
-    city: Option<City>,
+    city: Option<maxminddb::geoip2::structs::City>,
     #[serde(rename = "country")]
-    country: Option<Country>,
-}
-
-#[derive(Deserialize)]
-struct Location {
-    #[serde(rename = "latitude")]
-    latitude: Option<f64>,
-    #[serde(rename = "longitude")]
-    longitude: Option<f64>,
-}
-
-#[derive(Deserialize)]
-struct City {
-    #[serde(rename = "names")]
-    names: Option<std::collections::HashMap<String, String>>,
-}
-
-#[derive(Deserialize)]
-struct Country {
-    #[serde(rename = "iso_code")]
-    iso_code: Option<String>,
-    #[serde(rename = "names")]
-    names: Option<std::collections::HashMap<String, String>>,
+    country: Option<maxminddb::geoip2::structs::Country>,
 }
 
 #[tauri::command]
@@ -85,12 +64,12 @@ async fn geo_lookup(ip: String) -> Result<GeoResult, String> {
             let city_name = city_response.city
                 .as_ref()
                 .and_then(|c| c.names.as_ref())
-                .and_then(|n: &std::collections::HashMap<String, String>| n.get("en").cloned());
+                .and_then(|n| n.get("en"));
 
             let country_name = city_response.country
                 .as_ref()
                 .and_then(|c| c.names.as_ref())
-                .and_then(|n: &std::collections::HashMap<String, String>| n.get("en").cloned());
+                .and_then(|n| n.get("en"));
 
             let country_code = city_response.country
                 .as_ref()
@@ -101,8 +80,8 @@ async fn geo_lookup(ip: String) -> Result<GeoResult, String> {
                 ip,
                 lat,
                 lng,
-                city: city_name,
-                country: country_name,
+                city: city_name.cloned(),
+                country: country_name.cloned(),
                 country_code,
             })
         }
@@ -200,7 +179,7 @@ static SINGLE_INSTANCE_ACTIVE: AtomicBool = AtomicBool::new(false);
 fn is_process_running(pid: u32) -> bool {
     let mut system = System::new();
     system.refresh_processes();
-    system.processes().values().any(|process: &sysinfo::Process| process.pid().as_u32() == pid)
+    system.processes().values().any(|process: &sysinfo::Process| process.pid().as_u32().unwrap_or(0) == pid)
 }
 
 // Function to create lock file and register cleanup
@@ -319,8 +298,6 @@ pub struct TraceOptions {
     pub resolve_dns: Option<bool>,
 }
 
-use tokio::sync::Notify;
-
 struct RunningTrace {
     cancel_notify: Arc<Notify>,
     handle: tokio::task::JoinHandle<Result<TraceResult, String>>,
@@ -376,7 +353,7 @@ async fn run_trace(
         tracing::debug!("[Rust] [TRACE] Spawned task completed for trace_id: {}, result success: {}", trace_id_for_cleanup, result.is_ok());
         // Clean up the completed trace from the map after completion
         {
-            let mut running_traces: std::sync::MutexGuard<'_, HashMap<String, RunningTrace>> = state_for_cleanup.lock();
+            let mut running_traces: std::sync::MutexGuard<'_, HashMap<String, RunningTrace>> = state_for_cleanup.lock().expect("Failed to acquire mutex lock for cleanup");
             running_traces.remove(&trace_id_for_cleanup);
         }
         
@@ -386,7 +363,7 @@ async fn run_trace(
     
     // Store the running trace
     {
-        let mut running_traces: std::sync::MutexGuard<'_, HashMap<String, RunningTrace>> = state.running_traces.lock();
+        let mut running_traces: std::sync::MutexGuard<'_, HashMap<String, RunningTrace>> = state.running_traces.lock().expect("Failed to acquire mutex lock for storing trace");
         running_traces.insert(
             trace_id.clone(), 
             RunningTrace { cancel_notify, handle }
@@ -614,7 +591,7 @@ async fn execute_trace_with_cancel(
 
 #[tauri::command]
 async fn stop_trace(trace_id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let mut running_traces: std::sync::MutexGuard<'_, HashMap<String, RunningTrace>> = state.running_traces.lock();
+    let mut running_traces: std::sync::MutexGuard<'_, HashMap<String, RunningTrace>> = state.running_traces.lock().expect("Failed to acquire mutex lock for stopping trace");
     if let Some(running_trace) = running_traces.remove(&trace_id) {
         running_trace.cancel_notify.notify_one();
         
@@ -1150,12 +1127,12 @@ async fn geo_lookup_inner(ip: String) -> Result<GeoResult, String> {
             let city_name = city_response.city
                 .as_ref()
                 .and_then(|c| c.names.as_ref())
-                .and_then(|n: &std::collections::HashMap<String, String>| n.get("en").cloned());
+                .and_then(|n| n.get("en"));
 
             let country_name = city_response.country
                 .as_ref()
                 .and_then(|c| c.names.as_ref())
-                .and_then(|n: &std::collections::HashMap<String, String>| n.get("en").cloned());
+                .and_then(|n| n.get("en"));
 
             let country_code = city_response.country
                 .as_ref()
@@ -1169,8 +1146,8 @@ async fn geo_lookup_inner(ip: String) -> Result<GeoResult, String> {
                 ip,
                 lat,
                 lng,
-                city: city_name,
-                country: country_name,
+                city: city_name.cloned(),
+                country: country_name.cloned(),
                 country_code,
             })
         }
