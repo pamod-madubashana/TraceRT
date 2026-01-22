@@ -1,6 +1,10 @@
 // #![windows_subsystem = "console"]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 use tauri::{Emitter, AppHandle};
 use serde::{Deserialize, Serialize};
 use maxminddb::Reader;
@@ -383,10 +387,19 @@ async fn execute_trace_with_cancel(
     tracing::info!("[Rust] [TRACE] execute_trace_with_cancel start cmd='{}' args='{:?}' pid={}", cmd, args, pid);
     
     // Create the command
-    let mut child = Command::new(&cmd)
+    let mut cmd_builder = Command::new(&cmd);
+    cmd_builder
         .args(&args)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(windows)]
+    {
+        // CREATE_NO_WINDOW
+        cmd_builder.creation_flags(0x08000000);
+    }
+
+    let mut child = cmd_builder
         .spawn()
         .map_err(|e| {
             let error_msg = format!("Failed to start {}: {}", cmd, e);
