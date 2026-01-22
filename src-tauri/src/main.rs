@@ -442,14 +442,30 @@ async fn execute_trace_with_cancel(
                             // Enrich this single hop with geolocation data immediately
                             if let Some(ref ip) = hop_data.ip {
                                 if let Ok(geo_result) = geo_lookup_inner(ip.to_string()).await {
-                                    // Convert GeoResult to GeoLocation
-                                    hop_data.geo = Some(GeoLocation {
-                                        lat: geo_result.lat,
-                                        lng: geo_result.lng,
-                                        city: geo_result.city,
-                                        country: geo_result.country,
-                                        country_code: geo_result.country_code,
-                                    });
+                                    // Only set geo when lat/lng exist, don't set fake (0,0) coordinates
+                                    if let (Some(lat), Some(lng)) = (geo_result.lat, geo_result.lng) {
+                                        // Convert GeoResult to GeoLocation
+                                        hop_data.geo = Some(GeoLocation {
+                                            lat: Some(lat),
+                                            lng: Some(lng),
+                                            city: geo_result.city,
+                                            country: geo_result.country,
+                                            country_code: geo_result.country_code,
+                                        });
+                                    } else {
+                                        // Keep location text for private/internal but don't set geo coords
+                                        hop_data.geo = if geo_result.city.as_deref() == Some("Private/Internal") {
+                                            Some(GeoLocation {
+                                                lat: None,
+                                                lng: None,
+                                                city: geo_result.city,
+                                                country: geo_result.country,
+                                                country_code: geo_result.country_code,
+                                            })
+                                        } else {
+                                            None
+                                        };
+                                    }
                                 }
                             }
                             
@@ -492,14 +508,30 @@ async fn execute_trace_with_cancel(
                             // Enrich this single hop with geolocation data immediately
                             if let Some(ref ip) = hop_data.ip {
                                 if let Ok(geo_result) = geo_lookup_inner(ip.to_string()).await {
-                                    // Convert GeoResult to GeoLocation
-                                    hop_data.geo = Some(GeoLocation {
-                                        lat: geo_result.lat,
-                                        lng: geo_result.lng,
-                                        city: geo_result.city,
-                                        country: geo_result.country,
-                                        country_code: geo_result.country_code,
-                                    });
+                                    // Only set geo when lat/lng exist, don't set fake (0,0) coordinates
+                                    if let (Some(lat), Some(lng)) = (geo_result.lat, geo_result.lng) {
+                                        // Convert GeoResult to GeoLocation
+                                        hop_data.geo = Some(GeoLocation {
+                                            lat: Some(lat),
+                                            lng: Some(lng),
+                                            city: geo_result.city,
+                                            country: geo_result.country,
+                                            country_code: geo_result.country_code,
+                                        });
+                                    } else {
+                                        // Keep location text for private/internal but don't set geo coords
+                                        hop_data.geo = if geo_result.city.as_deref() == Some("Private/Internal") {
+                                            Some(GeoLocation {
+                                                lat: None,
+                                                lng: None,
+                                                city: geo_result.city,
+                                                country: geo_result.country,
+                                                country_code: geo_result.country_code,
+                                            })
+                                        } else {
+                                            None
+                                        };
+                                    }
                                 }
                             }
                             
@@ -807,7 +839,7 @@ fn parse_traceroute_line(line: &str) -> Option<HopData> {
             .collect();
             
         let avg_latency = if !valid_latencies.is_empty() {
-            Some(valid_latencies.iter().sum::<f64>() / valid_latencies.len() as f64)
+            Some((valid_latencies.iter().sum::<f64>() / valid_latencies.len() as f64).round())
         } else {
             None
         };
@@ -873,7 +905,7 @@ fn parse_traceroute_line(line: &str) -> Option<HopData> {
             .collect();
         
         let avg_latency = if !valid_latencies.is_empty() {
-            Some(valid_latencies.iter().sum::<f64>() / valid_latencies.len() as f64)
+            Some((valid_latencies.iter().sum::<f64>() / valid_latencies.len() as f64).round())
         } else {
             None
         };

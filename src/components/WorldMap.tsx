@@ -87,8 +87,37 @@ const WorldMap = ({ hops, compact = false, selectedHop = null, onSelectHop }: Wo
     onSelectHopRef.current = onSelectHop;
   }, [onSelectHop]);
 
+  // Helper function to check if an IP is private
+  const isPrivateIp = (ip?: string | null) => {
+    if (!ip) return true;
+    if (ip.startsWith("10.")) return true;
+    if (ip.startsWith("192.168.")) return true;
+    if (ip.startsWith("172.")) {
+      const parts = ip.split(".");
+      if (parts.length > 1) {
+        const secondOctet = Number(parts[1]);
+        return secondOctet >= 16 && secondOctet <= 31;
+      }
+    }
+    return false;
+  };
+
+  // Helper function to check if hop has valid geo
+  const hasValidGeo = (h: HopData) =>
+    !!h.geo &&
+    typeof h.geo.lat === "number" &&
+    typeof h.geo.lng === "number" &&
+    !(h.geo.lat === 0 && h.geo.lng === 0);
+
+  // Find the first public hop with valid geo coordinates for the origin
+  const originGeo = useMemo(() => {
+    const firstPublic = hops.find(h => h.ip && !isPrivateIp(h.ip) && hasValidGeo(h));
+    return firstPublic || null;
+  }, [hops]);
+
+  // Filter for hops that are public and have valid geo coordinates
   const hopsWithGeo = useMemo(() => 
-    hops.filter(h => h.geo && h.status === "success"), 
+    hops.filter(h => h.ip && !isPrivateIp(h.ip) && hasValidGeo(h)), 
     [hops]
   );
 
@@ -309,9 +338,11 @@ const WorldMap = ({ hops, compact = false, selectedHop = null, onSelectHop }: Wo
     const pointSeries = pointSeriesRef.current;
     const particleSeries = particleSeriesRef.current;
     if (!chart || !lineSeries || !pointSeries || !particleSeries) return;
-
+  
     const points = hopsWithGeo.map((hop, idx) => {
-      const role = idx === 0 ? "source" : idx === hopsWithGeo.length - 1 ? "destination" : "hop";
+      // Determine role based on whether this is the first public hop with valid geo
+      const isFirstPublic = originGeo && hop.hop === originGeo.hop;
+      const role = isFirstPublic ? "source" : idx === hopsWithGeo.length - 1 ? "destination" : "hop";
       return {
         geometry: { type: "Point", coordinates: [hop.geo!.lng, hop.geo!.lat] },
         hopNumber: hop.hop,
@@ -322,7 +353,7 @@ const WorldMap = ({ hops, compact = false, selectedHop = null, onSelectHop }: Wo
       };
     });
     pointSeries.data.setAll(points as any);
-
+  
     const lines = hopsWithGeo.slice(0, -1).map((hop, idx) => {
       const next = hopsWithGeo[idx + 1];
       return {
@@ -336,19 +367,24 @@ const WorldMap = ({ hops, compact = false, selectedHop = null, onSelectHop }: Wo
       };
     });
     lineSeries.data.setAll(lines as any);
-
+  
     if (particleTickRef.current) window.clearInterval(particleTickRef.current);
     particleTickRef.current = null;
-
+  
     // If we don't have at least one segment, ensure no stray particles remain.
     if (hopsWithGeo.length < 2) {
       particlesRef.current = [];
       particleItemByIdRef.current = {};
       particleSeries.data.setAll([] as any);
-      if (hopsWithGeo.length === 0) chart.goHome(0);
+      if (hopsWithGeo.length === 0) {
+        chart.goHome(0);
+      } else if (originGeo && originGeo.geo) {
+        // If we have origin geo but not enough segments, focus on the origin
+        chart.zoomToGeoPoint({ longitude: originGeo.geo.lng!, latitude: originGeo.geo.lat! }, 3, true);
+      }
       return;
     }
-
+  
     const segmentPairs = hopsWithGeo.slice(0, -1).map((hop, idx) => {
       const next = hopsWithGeo[idx + 1];
       return {
@@ -356,7 +392,7 @@ const WorldMap = ({ hops, compact = false, selectedHop = null, onSelectHop }: Wo
         end: [next.geo!.lng, next.geo!.lat] as [number, number],
       };
     });
-
+  
     const particles: ParticleDef[] = segmentPairs.flatMap((seg, i) =>
       [0, 1].map((j) => ({
         id: `p-${i}-${j}`,
@@ -367,7 +403,7 @@ const WorldMap = ({ hops, compact = false, selectedHop = null, onSelectHop }: Wo
       }))
     );
     particlesRef.current = particles;
-
+  
     particleSeries.data.setAll(
       particles.map((p) => ({
         id: p.id,
@@ -380,8 +416,8 @@ const WorldMap = ({ hops, compact = false, selectedHop = null, onSelectHop }: Wo
         },
       })) as any
     );
-
-    // Build a stable lookup by id so we don't update the wrong dataItem (prevents “random dots”).
+  
+    // Build a stable lookup by id so we don't update the wrong dataItem (prevents "random dots").
     const byId: Record<string, am5.DataItem<any> | undefined> = {};
     for (const item of particleSeries.dataItems) {
       const ctx: any = item.dataContext as any;
@@ -389,7 +425,7 @@ const WorldMap = ({ hops, compact = false, selectedHop = null, onSelectHop }: Wo
       if (typeof id === "string") byId[id] = item as any;
     }
     particleItemByIdRef.current = byId;
-
+  
     if (particles.length > 0) {
       particleTickRef.current = window.setInterval(() => {
         const ps = particlesRef.current;
@@ -405,7 +441,12 @@ const WorldMap = ({ hops, compact = false, selectedHop = null, onSelectHop }: Wo
         }
       }, 40);
     }
-  }, [compact, hopsWithGeo]);
+      
+    // Focus on the origin point if it exists
+    if (originGeo && originGeo.geo) {
+      chart.zoomToGeoPoint({ longitude: originGeo.geo.lng!, latitude: originGeo.geo.lat! }, 3, true);
+    }
+  }, [compact, hopsWithGeo, originGeo]);
 
   return (
     <div className="cyber-panel p-2 glow-border h-full flex flex-col">

@@ -71,13 +71,14 @@ export const useTrace = () => {
     
     // Define merge function as per requirements
     const mergeHop = (prev: HopData | undefined, incoming: HopData): HopData => {
-      // Preserve geo if incoming doesn't have it
-      const geo = incoming.geo ?? prev?.geo ?? null;
+      // Only preserve geo if IP matches (prevent timeout hops from inheriting geo from previous hops)
+      const sameIp = !!prev?.ip && !!incoming.ip && prev.ip === incoming.ip;
+      const geo = incoming.geo ?? (sameIp ? prev?.geo : null);
 
-      // Prefer "success" over "timeout" if either says success
-      const status = prev?.status === "success" || incoming.status === "success"
-        ? "success"
-        : incoming.status ?? prev?.status ?? "pending";
+      // For timeout hops with no IP, force status to timeout
+      const status = incoming.ip == null || incoming.status === "timeout"
+        ? "timeout"
+        : (incoming.status ?? prev?.status ?? "pending");
 
       // Prefer a real latency over null
       const avgLatency = incoming.avgLatency ?? prev?.avgLatency ?? null;
@@ -132,13 +133,14 @@ export const useTrace = () => {
       
       // Define merge function as per requirements
       const mergeHop = (prev: HopData | undefined, incoming: HopData): HopData => {
-        // Preserve geo if incoming doesn't have it
-        const geo = incoming.geo ?? prev?.geo ?? null;
+        // Only preserve geo if IP matches (prevent timeout hops from inheriting geo from previous hops)
+        const sameIp = !!prev?.ip && !!incoming.ip && prev.ip === incoming.ip;
+        const geo = incoming.geo ?? (sameIp ? prev?.geo : null);
 
-        // Prefer "success" over "timeout" if either says success
-        const status = prev?.status === "success" || incoming.status === "success"
-          ? "success"
-          : incoming.status ?? prev?.status ?? "pending";
+        // For timeout hops with no IP, force status to timeout
+        const status = incoming.ip == null || incoming.status === "timeout"
+          ? "timeout"
+          : (incoming.status ?? prev?.status ?? "pending");
 
         // Prefer a real latency over null
         const avgLatency = incoming.avgLatency ?? prev?.avgLatency ?? null;

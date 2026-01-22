@@ -80,7 +80,7 @@ const HopsTable = ({ hops, compact = false }: HopsTableProps) => {
                   </td>
                   <td>
                     {hop.avgLatency ? (
-                      <span className="text-accent font-semibold">{hop.avgLatency} ms</span>
+                      <span className="text-accent font-semibold">{Math.round(hop.avgLatency)} ms</span>
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}
