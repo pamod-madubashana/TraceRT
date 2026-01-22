@@ -109,6 +109,82 @@ const WorldMap = ({ hops, compact = false, selectedHop = null, onSelectHop }: Wo
     typeof h.geo.lng === "number" &&
     !(h.geo.lat === 0 && h.geo.lng === 0);
 
+  // Normalize longitude pair to handle dateline wrapping
+  const normalizeLngPair = (aLng: number, bLng: number) => {
+    let b = bLng;
+    const d = b - aLng;
+    if (Math.abs(d) > 180) b = d > 0 ? b - 360 : b + 360;
+    return [aLng, b] as const;
+  };
+
+  // Create curved geo line between two points
+  function curvedGeoLine(
+    start: [number, number], // [lng, lat]
+    end: [number, number],
+    seed: number,
+    opts?: {
+      steps?: number;          // how many points
+      curveFactor?: number;    // curvature strength
+      maxBendDeg?: number;     // max bend in degrees
+    }
+  ): [number, number][] {
+    const { steps = 18, curveFactor = 0.18, maxBendDeg = 12 } = opts ?? {};
+
+    let [lng1, lat1] = start;
+    let [lng2, lat2] = end;
+
+    // dateline normalization (shortest direction)
+    const dLng = lng2 - lng1;
+    if (Math.abs(dLng) > 180) lng2 = dLng > 0 ? lng2 - 360 : lng2 + 360;
+
+    // "flat-ish" projection for curvature math (equirectangular-ish)
+    const rad = Math.PI / 180;
+    const avgLat = (lat1 + lat2) * 0.5;
+    const x1 = lng1 * Math.cos(avgLat * rad);
+    const y1 = lat1;
+    const x2 = lng2 * Math.cos(avgLat * rad);
+    const y2 = lat2;
+
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const dist = Math.hypot(dx, dy);
+
+    // perpendicular normal
+    const nx = -(dy / (dist || 1));
+    const ny = dx / (dist || 1);
+
+    // stable curve side (alternating by seed)
+    const side = seed % 2 === 0 ? 1 : -1;
+
+    // curvature magnitude in "degrees", clamped
+    const bend = clamp(dist * curveFactor, 2, maxBendDeg) * side;
+
+    // control point at midpoint + normal offset
+    const mx = (x1 + x2) * 0.5 + nx * bend;
+    const my = (y1 + y2) * 0.5 + ny * bend;
+
+    // sample quadratic Bezier in this projected space
+    const coords: [number, number][] = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const it = 1 - t;
+
+      const x = it * it * x1 + 2 * it * t * mx + t * t * x2;
+      const y = it * it * y1 + 2 * it * t * my + t * t * y2;
+
+      // back to lng using same avgLat scale
+      const lng = x / Math.cos(avgLat * rad);
+      const lat = y;
+
+      // keep lng in [-180, 180] so amCharts behaves
+      const wrappedLng = ((lng + 180) % 360 + 360) % 360 - 180;
+
+      coords.push([wrappedLng, lat]);
+    }
+
+    return coords;
+  }
+
   // Find the first public hop with valid geo coordinates for the origin
   const originGeo = useMemo(() => {
     const firstPublic = hops.find(h => h.ip && !isPrivateIp(h.ip) && hasValidGeo(h));
@@ -212,7 +288,7 @@ const WorldMap = ({ hops, compact = false, selectedHop = null, onSelectHop }: Wo
       const dot = am5.Circle.new(root, {
         radius: compact ? 2.5 : 3,
         fill: cAccent,
-        // Keep particles crisp (no pulsing/glow) to avoid the “green pulse” effect
+        // Keep particles crisp (no pulsing/glow) to avoid the "green pulse" effect
         fillOpacity: 0.85,
         strokeOpacity: 0,
         strokeWidth: 0,
@@ -338,7 +414,7 @@ const WorldMap = ({ hops, compact = false, selectedHop = null, onSelectHop }: Wo
     const pointSeries = pointSeriesRef.current;
     const particleSeries = particleSeriesRef.current;
     if (!chart || !lineSeries || !pointSeries || !particleSeries) return;
-  
+
     const points = hopsWithGeo.map((hop, idx) => {
       // Determine role based on whether this is the first public hop with valid geo
       const isFirstPublic = originGeo && hop.hop === originGeo.hop;
@@ -353,24 +429,29 @@ const WorldMap = ({ hops, compact = false, selectedHop = null, onSelectHop }: Wo
       };
     });
     pointSeries.data.setAll(points as any);
-  
+
     const lines = hopsWithGeo.slice(0, -1).map((hop, idx) => {
       const next = hopsWithGeo[idx + 1];
+
+      const start: [number, number] = [hop.geo!.lng, hop.geo!.lat];
+      const end: [number, number] = [next.geo!.lng, next.geo!.lat];
+
       return {
         geometry: {
           type: "LineString",
-          coordinates: [
-            [hop.geo!.lng, hop.geo!.lat],
-            [next.geo!.lng, next.geo!.lat],
-          ],
+          coordinates: curvedGeoLine(start, end, hop.hop, {
+            steps: compact ? 14 : 18,
+            curveFactor: 0.18,  // lower = less indirect
+            maxBendDeg: 10,     // hard cap to prevent crazy curves
+          }),
         },
       };
     });
     lineSeries.data.setAll(lines as any);
-  
+
     if (particleTickRef.current) window.clearInterval(particleTickRef.current);
     particleTickRef.current = null;
-  
+
     // If we don't have at least one segment, ensure no stray particles remain.
     if (hopsWithGeo.length < 2) {
       particlesRef.current = [];
@@ -384,7 +465,7 @@ const WorldMap = ({ hops, compact = false, selectedHop = null, onSelectHop }: Wo
       }
       return;
     }
-  
+
     const segmentPairs = hopsWithGeo.slice(0, -1).map((hop, idx) => {
       const next = hopsWithGeo[idx + 1];
       return {
@@ -392,7 +473,7 @@ const WorldMap = ({ hops, compact = false, selectedHop = null, onSelectHop }: Wo
         end: [next.geo!.lng, next.geo!.lat] as [number, number],
       };
     });
-  
+
     const particles: ParticleDef[] = segmentPairs.flatMap((seg, i) =>
       [0, 1].map((j) => ({
         id: `p-${i}-${j}`,
@@ -403,7 +484,7 @@ const WorldMap = ({ hops, compact = false, selectedHop = null, onSelectHop }: Wo
       }))
     );
     particlesRef.current = particles;
-  
+
     particleSeries.data.setAll(
       particles.map((p) => ({
         id: p.id,
@@ -416,7 +497,7 @@ const WorldMap = ({ hops, compact = false, selectedHop = null, onSelectHop }: Wo
         },
       })) as any
     );
-  
+
     // Build a stable lookup by id so we don't update the wrong dataItem (prevents "random dots").
     const byId: Record<string, am5.DataItem<any> | undefined> = {};
     for (const item of particleSeries.dataItems) {
@@ -425,7 +506,7 @@ const WorldMap = ({ hops, compact = false, selectedHop = null, onSelectHop }: Wo
       if (typeof id === "string") byId[id] = item as any;
     }
     particleItemByIdRef.current = byId;
-  
+
     if (particles.length > 0) {
       particleTickRef.current = window.setInterval(() => {
         const ps = particlesRef.current;
