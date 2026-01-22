@@ -50,35 +50,40 @@ async fn geo_lookup(ip: String) -> Result<GeoResult, String> {
     // Direct lookup without deserializing to our custom struct
     match db.lookup(addr) {
         Ok(lookup_result) => {
-            // Access the data through the proper API
-            let city_response: maxminddb::geoip2::City = lookup_result;
-            
-            let lat = city_response.location.as_ref().and_then(|l| l.latitude);
-            let lng = city_response.location.as_ref().and_then(|l| l.longitude);
+            // Decode the lookup result to City type
+            if let Ok(Some(city_response)) = lookup_result.decode::<maxminddb::geoip2::City>() {
+                let lat = city_response.location.and_then(|l| l.latitude);
+                let lng = city_response.location.and_then(|l| l.longitude);
 
-            let city_name = city_response.city
-                .as_ref()
-                .and_then(|c| c.names.as_ref())
-                .and_then(|n: &std::collections::HashMap<String, String>| n.get("en").cloned());
+                let city_name = city_response.city
+                    .and_then(|c| c.names)
+                    .and_then(|n: std::collections::HashMap<String, String>| n.get("en").cloned());
 
-            let country_name = city_response.country
-                .as_ref()
-                .and_then(|c| c.names.as_ref())
-                .and_then(|n: &std::collections::HashMap<String, String>| n.get("en").cloned());
+                let country_name = city_response.country
+                    .and_then(|c| c.names)
+                    .and_then(|n: std::collections::HashMap<String, String>| n.get("en").cloned());
 
-            let country_code = city_response.country
-                .as_ref()
-                .and_then(|c| c.iso_code.as_ref())
-                .cloned();
+                let country_code = city_response.country
+                    .and_then(|c| c.iso_code);
 
-            Ok(GeoResult {
-                ip,
-                lat,
-                lng,
-                city: city_name,
-                country: country_name,
-                country_code,
-            })
+                Ok(GeoResult {
+                    ip,
+                    lat,
+                    lng,
+                    city: city_name,
+                    country: country_name,
+                    country_code,
+                })
+            } else {
+                Ok(GeoResult {
+                    ip,
+                    lat: None,
+                    lng: None,
+                    city: Some("Unknown".to_string()),
+                    country: Some("Unknown".to_string()),
+                    country_code: None,
+                })
+            }
         }
         Err(_) => Ok(GeoResult {
             ip,
@@ -1116,38 +1121,43 @@ async fn geo_lookup_inner(ip: String) -> Result<GeoResult, String> {
 
     match db.lookup(addr) {
         Ok(lookup_result) => {
-            // Access the data through the proper API
-            let city_response: maxminddb::geoip2::City = lookup_result;
-            
-            let lat = city_response.location.as_ref().and_then(|l| l.latitude);
-            let lng = city_response.location.as_ref().and_then(|l| l.longitude);
+            // Decode the lookup result to City type
+            if let Ok(Some(city_response)) = lookup_result.decode::<maxminddb::geoip2::City>() {
+                let lat = city_response.location.and_then(|l| l.latitude);
+                let lng = city_response.location.and_then(|l| l.longitude);
 
-            let city_name = city_response.city
-                .as_ref()
-                .and_then(|c| c.names.as_ref())
-                .and_then(|n: &std::collections::HashMap<String, String>| n.get("en").cloned());
+                let city_name = city_response.city
+                    .and_then(|c| c.names)
+                    .and_then(|n: std::collections::HashMap<String, String>| n.get("en").cloned());
 
-            let country_name = city_response.country
-                .as_ref()
-                .and_then(|c| c.names.as_ref())
-                .and_then(|n: &std::collections::HashMap<String, String>| n.get("en").cloned());
+                let country_name = city_response.country
+                    .and_then(|c| c.names)
+                    .and_then(|n: std::collections::HashMap<String, String>| n.get("en").cloned());
 
-            let country_code = city_response.country
-                .as_ref()
-                .and_then(|c| c.iso_code.as_ref())
-                .cloned();
+                let country_code = city_response.country
+                    .and_then(|c| c.iso_code);
 
-            tracing::debug!("[Rust] [GEO] Successful lookup for {}: lat={:?}, lng={:?}, city={:?}, country={:?}",
-                           ip, lat, lng, city_name, country_name);
-            
-            Ok(GeoResult {
-                ip,
-                lat,
-                lng,
-                city: city_name,
-                country: country_name,
-                country_code,
-            })
+                tracing::debug!("[Rust] [GEO] Successful lookup for {}: lat={:?}, lng={:?}, city={:?}, country={:?}",
+                               ip, lat, lng, city_name, country_name);
+                
+                Ok(GeoResult {
+                    ip,
+                    lat,
+                    lng,
+                    city: city_name,
+                    country: country_name,
+                    country_code,
+                })
+            } else {
+                Ok(GeoResult {
+                    ip,
+                    lat: None,
+                    lng: None,
+                    city: Some("Unknown".to_string()),
+                    country: Some("Unknown".to_string()),
+                    country_code: None,
+                })
+            }
         }
         Err(e) => {
             tracing::debug!("[Rust] [GEO] Geolocation lookup failed for {}: {}", ip, e);
