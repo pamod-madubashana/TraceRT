@@ -20,17 +20,6 @@ use tokio::fs;
 
 use maxminddb::geoip2;
 
-// Define the structure for the City database
-#[derive(Deserialize)]
-struct CityResponse {
-    #[serde(rename = "location")]
-    location: Option<geoip2::structs::Location>,
-    #[serde(rename = "city")]
-    city: Option<geoip2::structs::City>,
-    #[serde(rename = "country")]
-    country: Option<geoip2::structs::Country>,
-}
-
 #[tauri::command]
 async fn geo_lookup(ip: String) -> Result<GeoResult, String> {
     // Check if it's a private IP - don't look up geolocation for private IPs
@@ -58,7 +47,8 @@ async fn geo_lookup(ip: String) -> Result<GeoResult, String> {
     let db = GEO_DB.as_ref().ok_or_else(|| "Geolocation database not loaded".to_string())?;
     let addr: std::net::IpAddr = ip.parse().map_err(|_| "Invalid IP address".to_string())?;
 
-    match db.lookup(addr) {
+    // Direct lookup without deserializing to our custom struct
+    match db.lookup::<maxminddb::geoip2::City>(addr) {
         Ok(city_response) => {
             let lat = city_response.location.as_ref().and_then(|l| l.latitude);
             let lng = city_response.location.as_ref().and_then(|l| l.longitude);
@@ -1121,7 +1111,7 @@ async fn geo_lookup_inner(ip: String) -> Result<GeoResult, String> {
         "Invalid IP address".to_string()
     })?;
 
-    match db.lookup(addr) {
+    match db.lookup::<maxminddb::geoip2::City>(addr) {
         Ok(city_response) => {
             let lat = city_response.location.as_ref().and_then(|l| l.latitude);
             let lng = city_response.location.as_ref().and_then(|l| l.longitude);
