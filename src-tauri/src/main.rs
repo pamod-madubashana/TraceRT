@@ -102,30 +102,30 @@ pub struct GeoLocation {
     pub country_code: Option<String>,
 }
 
-// Static reference to the geolocation database
 static GEO_DB: Lazy<Option<Reader<Vec<u8>>>> = Lazy::new(|| {
-    // Look for the geolocation database file in resources or app data
-    let base_dirs = BaseDirs::new();
-    let data_dir = base_dirs.as_ref().map(|dirs| dirs.data_local_dir()).unwrap_or(Path::new("."));
+    // This matches your app_data_dir logic: %APPDATA%\TraceRT
+    let app_data_dir = BaseDirs::new()
+        .map(|dirs| dirs.data_dir().join("TraceRT"))
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+
     let possible_paths = [
-        "resources/GeoLite2-City.mmdb",
-        "GeoLite2-City.mmdb",
-        &format!("{}/tracert/GeoLite2-City.mmdb", data_dir.to_str().unwrap()),
+        // if you ship it as a resource (optional)
+        app_data_dir.join("resources").join("GeoLite2-City.mmdb"),
+        // main location you want
+        app_data_dir.join("GeoLite2-City.mmdb"),
     ];
-    
+
     for path in &possible_paths {
-        if Path::new(path).exists() {
-            match Reader::open_readfile(Path::new(path)) {
+        if path.exists() {
+            match Reader::open_readfile(path) {
                 Ok(reader) => return Some(reader),
-                Err(e) => {
-                    eprintln!("Failed to load geodb from {}: {}", path, e);
-                }
+                Err(e) => eprintln!("Failed to load geodb from {:?}: {}", path, e),
             }
         }
     }
+
     None
 });
-
 #[derive(Serialize, Clone)]
 struct TraceLineEvent {
   trace_id: String,
@@ -1220,8 +1220,8 @@ async fn geo_lookup_inner(ip: String) -> Result<GeoResult, String> {
 #[tauri::command]
 async fn download_geolite_db() -> Result<String, String> {
     let app_data_dir = BaseDirs::new()
-        .map(|dirs: directories::BaseDirs| dirs.data_dir().join("Local").join("tracert"))
-        .unwrap_or(Path::new("./Local/tracert").to_path_buf());
+        .map(|dirs| dirs.data_dir().join("TraceRT"))
+        .unwrap_or_else(|| std::path::PathBuf::from("./data"));
     
     // Create directory if it doesn't exist
     fs::create_dir_all(&app_data_dir).await
